@@ -67,6 +67,7 @@ func (p *activityProcessor) ProcessWorkItem(ctx context.Context, awi *ActivityWo
 	}
 
 	// Execute the activity and get its result
+	fmt.Printf(">>PROCESS WORK ITEM: %s/%d\n", awi.InstanceID, awi.SequenceNumber)
 	result, err := p.executor.ExecuteActivity(ctx, awi.InstanceID, awi.NewEvent)
 	if err != nil {
 		if span != nil {
@@ -75,6 +76,7 @@ func (p *activityProcessor) ProcessWorkItem(ctx context.Context, awi *ActivityWo
 		}
 		return err
 	}
+	fmt.Printf(">>GOT PROCESS WORK ITEM: %s/%d %v\n", awi.InstanceID, awi.SequenceNumber, result)
 
 	awi.Result = result
 	return nil

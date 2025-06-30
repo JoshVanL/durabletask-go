@@ -19,7 +19,7 @@ type OrchestrationWorkItem struct {
 	LockedBy   string
 	RetryCount int32
 	State      *protos.OrchestrationRuntimeState
-	Properties map[string]interface{}
+	CallbackCh chan bool
 }
 
 // String implements core.WorkItem and fmt.Stringer
@@ -45,11 +45,12 @@ func (wi *OrchestrationWorkItem) GetAbandonDelay() time.Duration {
 
 type ActivityWorkItem struct {
 	SequenceNumber int64
+	WorkerID       string
 	InstanceID     api.InstanceID
 	NewEvent       *HistoryEvent
 	Result         *HistoryEvent
 	LockedBy       string
-	Properties     map[string]interface{}
+	CallbackCh     chan bool
 }
 
 // String implements core.WorkItem and fmt.Stringer
