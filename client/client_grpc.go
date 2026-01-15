@@ -225,7 +225,7 @@ func (c *TaskHubGrpcClient) PurgeOrchestrationState(ctx context.Context, id api.
 // source instance ID. If not given, a random new instance ID will be
 // generated and returned. Can optionally give a new input to the target
 // event ID to rerun from.
-func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunOptions) (api.InstanceID, error) {
+func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunFromOptions) (api.InstanceID, error) {
 	req := &protos.RerunWorkflowFromEventRequest{
 		SourceInstanceID: string(id),
 		EventID:          eventID,
@@ -237,6 +237,28 @@ func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id api.I
 	}
 
 	resp, err := c.client.RerunWorkflowFromEvent(ctx, req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", err
+	}
+
+	return api.InstanceID(resp.GetNewInstanceID()), nil
+}
+
+func (c *TaskHubGrpcClient) RerunWorkflowAfterEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunAfterOptions) (api.InstanceID, error) {
+	req := &protos.RerunWorkflowAfterEventRequest{
+		SourceInstanceID: string(id),
+		EventID:          eventID,
+	}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return "", fmt.Errorf("failed to configure rerun request: %w", err)
+		}
+	}
+
+	resp, err := c.client.RerunWorkflowAfterEvent(ctx, req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()

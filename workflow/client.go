@@ -137,9 +137,9 @@ func (c *Client) PurgeWorkflowState(ctx context.Context, id string, opts ...Purg
 // and returned. Can optionally give a new input to the target event ID to
 // rerun from.
 func (c *Client) RerunWorkflowFromEvent(ctx context.Context, id string, eventID uint32, opts ...RerunOptions) (string, error) {
-	oops := make([]api.RerunOptions, len(opts))
+	oops := make([]api.RerunFromOptions, len(opts))
 	for i, o := range opts {
-		oops[i] = api.RerunOptions(o)
+		oops[i] = api.RerunFromOptions(o)
 	}
 	newID, err := c.thgc.RerunWorkflowFromEvent(ctx, api.InstanceID(id), eventID, oops...)
 	return string(newID), err

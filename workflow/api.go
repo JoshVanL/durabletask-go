@@ -14,7 +14,8 @@ type FetchWorkflowMetadataOptions api.FetchOrchestrationMetadataOptions
 type RaiseEventOptions api.RaiseEventOptions
 type TerminateOptions api.TerminateOptions
 type PurgeOptions api.PurgeOptions
-type RerunOptions api.RerunOptions
+type RerunOptions api.RerunFromOptions
+type RerunAfterOptions api.RerunAfterOptions
 type ListInstanceIDsOptions api.ListInstanceIDsOptions
 type GetInstanceHistoryOptions api.GetInstanceHistoryOptions
 
@@ -99,11 +100,11 @@ func WorkflowMetadataIsComplete(o *WorkflowMetadata) bool {
 }
 
 func WithRerunInput(input any) RerunOptions {
-	return RerunOptions(api.WithRerunInput(input))
+	return RerunOptions(api.WithRerunFromInput(input))
 }
 
 func WithRerunNewInstanceID(id string) RerunOptions {
-	return RerunOptions(api.WithRerunNewInstanceID(api.InstanceID(id)))
+	return RerunOptions(api.WithRerunFromNewInstanceID(api.InstanceID(id)))
 }
 
 func WithRerunNewChildInstanceID(id string) RerunOptions {
@@ -111,6 +112,14 @@ func WithRerunNewChildInstanceID(id string) RerunOptions {
 		o.NewChildWorkflowInstanceID = ptr.Of(id)
 		return nil
 	})
+}
+
+func WithRerunAfterOutput(output any) RerunAfterOptions {
+	return RerunAfterOptions(api.WithRerunAfterOutput(output))
+}
+
+func WithRerunAfterNewInstanceID(id string) RerunAfterOptions {
+	return RerunAfterOptions(api.WithRerunAfterNewInstanceID(api.InstanceID(id)))
 }
 
 func WithListInstanceIDsPageSize(pageSize uint32) ListInstanceIDsOptions {

@@ -55,7 +55,8 @@ type TerminateOptions func(*protos.TerminateRequest) error
 // PurgeOptions is a set of options for purging an orchestration.
 type PurgeOptions func(*protos.PurgeInstancesRequest) error
 
-type RerunOptions func(*protos.RerunWorkflowFromEventRequest) error
+type RerunFromOptions func(*protos.RerunWorkflowFromEventRequest) error
+type RerunAfterOptions func(*protos.RerunWorkflowAfterEventRequest) error
 
 type ListInstanceIDsOptions func(*protos.ListInstanceIDsRequest) error
 
@@ -197,7 +198,7 @@ func OrchestrationMetadataIsComplete(o *protos.OrchestrationMetadata) bool {
 		o.GetRuntimeStatus() == protos.OrchestrationStatus_ORCHESTRATION_STATUS_CANCELED
 }
 
-func WithRerunInput(input any) RerunOptions {
+func WithRerunFromInput(input any) RerunFromOptions {
 	return func(req *protos.RerunWorkflowFromEventRequest) error {
 		req.OverwriteInput = true
 
@@ -216,8 +217,34 @@ func WithRerunInput(input any) RerunOptions {
 	}
 }
 
-func WithRerunNewInstanceID(id InstanceID) RerunOptions {
+func WithRerunFromNewInstanceID(id InstanceID) RerunFromOptions {
 	return func(req *protos.RerunWorkflowFromEventRequest) error {
+		req.NewInstanceID = ptr.Of(id.String())
+		return nil
+	}
+}
+
+func WithRerunAfterOutput(output any) RerunAfterOptions {
+	return func(req *protos.RerunWorkflowAfterEventRequest) error {
+		req.OverwriteOutput = true
+
+		if output == nil {
+			return nil
+		}
+
+		bytes, err := json.Marshal(output)
+		if err != nil {
+			return err
+		}
+
+		req.Output = wrapperspb.String(string(bytes))
+
+		return nil
+	}
+}
+
+func WithRerunAfterNewInstanceID(id InstanceID) RerunAfterOptions {
+	return func(req *protos.RerunWorkflowAfterEventRequest) error {
 		req.NewInstanceID = ptr.Of(id.String())
 		return nil
 	}

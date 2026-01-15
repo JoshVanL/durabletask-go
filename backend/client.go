@@ -26,7 +26,8 @@ type TaskHubClient interface {
 	SuspendOrchestration(ctx context.Context, id api.InstanceID, reason string) error
 	ResumeOrchestration(ctx context.Context, id api.InstanceID, reason string) error
 	PurgeOrchestrationState(ctx context.Context, id api.InstanceID, opts ...api.PurgeOptions) error
-	RerunWorkflowFromEvent(ctx context.Context, source api.InstanceID, eventID uint32, opts ...api.RerunOptions) (api.InstanceID, error)
+	RerunWorkflowFromEvent(ctx context.Context, source api.InstanceID, eventID uint32, opts ...api.RerunFromOptions) (api.InstanceID, error)
+	RerunWorkflowAfterEvent(ctx context.Context, source api.InstanceID, eventID uint32, opts ...api.RerunAfterOptions) (api.InstanceID, error)
 }
 
 type backendClient struct {
@@ -243,7 +244,7 @@ func (c *backendClient) PurgeOrchestrationState(ctx context.Context, id api.Inst
 // source instance ID. If not given, a random new instance ID will be generated
 // and returned. Can optionally give a new input to the target event ID to
 // rerun from.
-func (c *backendClient) RerunWorkflowFromEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunOptions) (api.InstanceID, error) {
+func (c *backendClient) RerunWorkflowFromEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunFromOptions) (api.InstanceID, error) {
 	req := &protos.RerunWorkflowFromEventRequest{SourceInstanceID: string(id), EventID: eventID}
 	for _, configure := range opts {
 		if err := configure(req); err != nil {
@@ -252,5 +253,17 @@ func (c *backendClient) RerunWorkflowFromEvent(ctx context.Context, id api.Insta
 	}
 
 	id, err := c.be.RerunWorkflowFromEvent(ctx, req)
+	return id, err
+}
+
+func (c *backendClient) RerunWorkflowAfterEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunAfterOptions) (api.InstanceID, error) {
+	req := &protos.RerunWorkflowAfterEventRequest{SourceInstanceID: string(id), EventID: eventID}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return "", fmt.Errorf("failed to configure rerun request: %w", err)
+		}
+	}
+
+	id, err := c.be.RerunWorkflowAfterEvent(ctx, req)
 	return id, err
 }

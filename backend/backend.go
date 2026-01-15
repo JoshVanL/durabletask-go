@@ -33,6 +33,7 @@ type (
 	OrchestrationRuntimeState        = protos.OrchestrationRuntimeState
 	OrchestrationRuntimeStateMessage = protos.OrchestrationRuntimeStateMessage
 	RerunWorkflowFromEventRequest    = protos.RerunWorkflowFromEventRequest
+	RerunWorkflowAfterEventRequest   = protos.RerunWorkflowAfterEventRequest
 	ListInstanceIDsRequest           = protos.ListInstanceIDsRequest
 	ListInstanceIDsResponse          = protos.ListInstanceIDsResponse
 	GetInstanceHistoryRequest        = protos.GetInstanceHistoryRequest
@@ -78,6 +79,7 @@ type Backend interface {
 	// generated and returned. Can optionally give a new input to the target
 	// event ID to rerun from.
 	RerunWorkflowFromEvent(ctx context.Context, req *protos.RerunWorkflowFromEventRequest) (api.InstanceID, error)
+	RerunWorkflowAfterEvent(ctx context.Context, req *protos.RerunWorkflowAfterEventRequest) (api.InstanceID, error)
 
 	// AddNewEvent adds a new orchestration event to the specified orchestration instance.
 	AddNewOrchestrationEvent(context.Context, api.InstanceID, *HistoryEvent) error

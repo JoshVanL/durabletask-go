@@ -553,6 +553,20 @@ func (g *grpcExecutor) RerunWorkflowFromEvent(ctx context.Context, req *protos.R
 	return &protos.RerunWorkflowFromEventResponse{NewInstanceID: newInstanceID.String()}, nil
 }
 
+func (g *grpcExecutor) RerunWorkflowAfterEvent(ctx context.Context, req *protos.RerunWorkflowAfterEventRequest) (*protos.RerunWorkflowAfterEventResponse, error) {
+	newInstanceID, err := g.backend.RerunWorkflowAfterEvent(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = g.WaitForInstanceStart(ctx, &protos.GetInstanceRequest{InstanceId: newInstanceID.String()})
+	if err != nil {
+		return nil, err
+	}
+
+	return &protos.RerunWorkflowAfterEventResponse{NewInstanceID: newInstanceID.String()}, nil
+}
+
 func (g *grpcExecutor) ListInstanceIDs(ctx context.Context, req *protos.ListInstanceIDsRequest) (*protos.ListInstanceIDsResponse, error) {
 	return g.backend.ListInstanceIDs(ctx, req)
 }
