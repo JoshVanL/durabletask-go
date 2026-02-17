@@ -127,7 +127,7 @@ func newTaskActivityContext(ctx context.Context, taskID int32, ts *protos.TaskSc
 
 	return &activityContext{
 		TaskID:          taskID,
-		TaskExecutionID: ts.TaskExecutionId,
+		TaskExecutionID: ts.TaskExecutionID,
 		Name:            ts.Name,
 		TraceContext:    ts.ParentTraceContext,
 		rawInput:        []byte(ts.Input.GetValue()),

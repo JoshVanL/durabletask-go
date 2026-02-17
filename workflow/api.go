@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-type NewWorkflowOptions api.NewOrchestrationOptions
-type FetchWorkflowMetadataOptions api.FetchOrchestrationMetadataOptions
+type NewWorkflowOptions api.NewWorkflowOptions
+type FetchWorkflowMetadataOptions api.FetchWorkflowMetadataOptions
 type RaiseEventOptions api.RaiseEventOptions
 type TerminateOptions api.TerminateOptions
 type PurgeOptions api.PurgeOptions
@@ -21,7 +21,7 @@ type GetInstanceHistoryOptions api.GetInstanceHistoryOptions
 // WithInstanceID configures an explicit workflow instance ID. If not
 // specified, a random UUID value will be used for the workflow instance ID.
 func WithInstanceID(id string) NewWorkflowOptions {
-	return NewWorkflowOptions(api.WithInstanceID(api.InstanceID(id)))
+	return NewWorkflowOptions(api.WithInstanceID(id))
 }
 
 // WithInput configures an input for the workflow. The specified input must be
@@ -91,11 +91,11 @@ func WithForcePurge(force bool) PurgeOptions {
 }
 
 func WorkflowMetadataIsRunning(o *WorkflowMetadata) bool {
-	return api.OrchestrationMetadataIsComplete(ptr.Of(protos.OrchestrationMetadata(*o)))
+	return api.WorkflowMetadataIsComplete(ptr.Of(protos.WorkflowMetadata(*o)))
 }
 
 func WorkflowMetadataIsComplete(o *WorkflowMetadata) bool {
-	return api.OrchestrationMetadataIsComplete(ptr.Of(protos.OrchestrationMetadata(*o)))
+	return api.WorkflowMetadataIsComplete(ptr.Of(protos.WorkflowMetadata(*o)))
 }
 
 func WithRerunInput(input any) RerunOptions {
@@ -103,7 +103,7 @@ func WithRerunInput(input any) RerunOptions {
 }
 
 func WithRerunNewInstanceID(id string) RerunOptions {
-	return RerunOptions(api.WithRerunNewInstanceID(api.InstanceID(id)))
+	return RerunOptions(api.WithRerunNewInstanceID(id))
 }
 
 func WithRerunNewChildInstanceID(id string) RerunOptions {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dapr/durabletask-go/api"
 	"github.com/dapr/durabletask-go/api/protos"
 )
 
@@ -13,26 +12,26 @@ type WorkItem interface {
 	IsWorkItem() bool
 }
 
-type OrchestrationWorkItem struct {
-	InstanceID api.InstanceID
-	NewEvents  []*HistoryEvent
+type WorkflowWorkItem struct {
+	InstanceID string
+	NewEvents  []*protos.HistoryEvent
 	LockedBy   string
 	RetryCount int32
-	State      *protos.OrchestrationRuntimeState
+	State      *protos.WorkflowRuntimeState
 	Properties map[string]interface{}
 }
 
 // String implements core.WorkItem and fmt.Stringer
-func (wi OrchestrationWorkItem) String() string {
+func (wi WorkflowWorkItem) String() string {
 	return fmt.Sprintf("%s (%d event(s))", wi.InstanceID, len(wi.NewEvents))
 }
 
 // IsWorkItem implements core.WorkItem
-func (wi OrchestrationWorkItem) IsWorkItem() bool {
+func (wi WorkflowWorkItem) IsWorkItem() bool {
 	return true
 }
 
-func (wi *OrchestrationWorkItem) GetAbandonDelay() time.Duration {
+func (wi *WorkflowWorkItem) GetAbandonDelay() time.Duration {
 	switch {
 	case wi.RetryCount == 0:
 		return time.Duration(0) // no delay
@@ -45,9 +44,9 @@ func (wi *OrchestrationWorkItem) GetAbandonDelay() time.Duration {
 
 type ActivityWorkItem struct {
 	SequenceNumber int64
-	InstanceID     api.InstanceID
-	NewEvent       *HistoryEvent
-	Result         *HistoryEvent
+	InstanceID     string
+	NewEvent       *protos.HistoryEvent
+	Result         *protos.HistoryEvent
 	LockedBy       string
 	Properties     map[string]interface{}
 }
@@ -55,7 +54,7 @@ type ActivityWorkItem struct {
 // String implements core.WorkItem and fmt.Stringer
 func (wi ActivityWorkItem) String() string {
 	name := wi.NewEvent.GetTaskScheduled().GetName()
-	taskID := wi.NewEvent.EventId
+	taskID := wi.NewEvent.GetEventID()
 	return fmt.Sprintf("%s/%s#%d", wi.InstanceID, name, taskID)
 }
 

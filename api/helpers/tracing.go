@@ -18,33 +18,36 @@ import (
 
 var tracer = otel.Tracer("durabletask")
 
-func StartNewCreateOrchestrationSpan(
-	ctx context.Context, name string, version string, instanceID string,
+func StartNewCreateWorkflowSpan(
+	ctx context.Context, name string, instanceID string,
 ) (context.Context, trace.Span) {
 	attributes := []attribute.KeyValue{
-		{Key: "durabletask.type", Value: attribute.StringValue("orchestration")},
+		{Key: "durabletask.type", Value: attribute.StringValue("workflow")},
 		{Key: "durabletask.task.name", Value: attribute.StringValue(name)},
 		{Key: "durabletask.task.instance_id", Value: attribute.StringValue(instanceID)},
 	}
-	return startNewSpan(ctx, "create_orchestration", name, version, attributes, trace.SpanKindClient, time.Now().UTC())
+	version := "TODO: @joshvanl"
+	return startNewSpan(ctx, "create_workflow", name, version, attributes, trace.SpanKindClient, time.Now().UTC())
 }
 
-func StartNewRunOrchestrationSpan(
+func StartNewRunWorkflowSpan(
 	ctx context.Context, es *protos.ExecutionStartedEvent, startedTime time.Time,
 ) (context.Context, trace.Span) {
 	name := es.Name
-	instanceID := es.OrchestrationInstance.InstanceId
-	version := es.Version.GetValue()
+	instanceID := es.WorkflowInstance.InstanceID
+	// TODO: @joshvanl
+	//version := es.Version.GetValue()
 	attributes := []attribute.KeyValue{
-		{Key: "durabletask.type", Value: attribute.StringValue("orchestration")},
+		{Key: "durabletask.type", Value: attribute.StringValue("workflow")},
 		{Key: "durabletask.task.name", Value: attribute.StringValue(name)},
 		{Key: "durabletask.task.instance_id", Value: attribute.StringValue(instanceID)},
 	}
-	return startNewSpan(ctx, "orchestration", name, version, attributes, trace.SpanKindServer, startedTime)
+	version := "TODO: @joshvanl"
+	return startNewSpan(ctx, "workflow", name, version, attributes, trace.SpanKindServer, startedTime)
 }
 
 func StartNewActivitySpan(
-	ctx context.Context, name string, version string, instanceID string, taskID int32,
+	ctx context.Context, name string, instanceID string, taskID int32,
 ) (context.Context, trace.Span) {
 	attributes := []attribute.KeyValue{
 		{Key: "durabletask.type", Value: attribute.StringValue("activity")},
@@ -52,6 +55,7 @@ func StartNewActivitySpan(
 		{Key: "durabletask.task.task_id", Value: attribute.Int64Value(int64(taskID))},
 		{Key: "durabletask.task.instance_id", Value: attribute.StringValue(instanceID)},
 	}
+	version := "TODO: @joshvanl"
 	return startNewSpan(ctx, "activity", name, version, attributes, trace.SpanKindServer, time.Now().UTC())
 }
 
@@ -59,7 +63,7 @@ func StartAndEndNewTimerSpan(ctx context.Context, tf *protos.TimerFiredEvent, cr
 	attributes := []attribute.KeyValue{
 		{Key: "durabletask.type", Value: attribute.StringValue("timer")},
 		{Key: "durabletask.fire_at", Value: attribute.StringValue(tf.FireAt.AsTime().Format(time.RFC3339))}, // time.RFC3339 most closely maps to ISO 8601
-		{Key: "durabletask.task.task_id", Value: attribute.Int64Value(int64(tf.TimerId))},
+		{Key: "durabletask.task.task_id", Value: attribute.Int64Value(int64(tf.TimerID))},
 		{Key: "durabletask.task.instance_id", Value: attribute.StringValue(instanceID)},
 	}
 
@@ -149,7 +153,6 @@ func SpanContextFromTraceContext(tc *protos.TraceContext) (trace.SpanContext, er
 	} else {
 		// backwards compatibility with older versions of the protobuf
 		traceID = tc.GetTraceParent()
-		spanID = tc.GetSpanID()
 		traceFlags = "01" // sampled
 	}
 

@@ -32,21 +32,20 @@ func NewTaskHubGrpcClient(cc grpc.ClientConnInterface, logger backend.Logger) *T
 	}
 }
 
-// ScheduleNewOrchestration schedules a new orchestration instance with a specified set of options for execution.
-func (c *TaskHubGrpcClient) ScheduleNewOrchestration(ctx context.Context, orchestrator string, opts ...api.NewOrchestrationOptions) (api.InstanceID, error) {
-	req := &protos.CreateInstanceRequest{Name: orchestrator}
+// ScheduleNewWorkflow schedules a new orchestration instance with a specified set of options for execution.
+func (c *TaskHubGrpcClient) ScheduleNewWorkflow(ctx context.Context, orchestrator string, opts ...api.NewWorkflowOptions) (string, error) {
+	req := &protos.ScheduleInstanceRequest{Name: orchestrator}
 	for _, configure := range opts {
 		configure(req)
 	}
-	if req.InstanceId == "" {
-		req.InstanceId = uuid.NewString()
+	if req.InstanceID == "" {
+		req.InstanceID = uuid.NewString()
 	}
 
 	xspan := trace.SpanFromContext(ctx)
 	if sctx := xspan.SpanContext(); sctx.IsValid() {
 		req.ParentTraceContext = &protos.TraceContext{
 			TraceParent: sctx.TraceID().String(),
-			SpanID:      sctx.SpanID().String(),
 			TraceState:  wrapperspb.String(sctx.TraceState().String()),
 		}
 	}
@@ -54,17 +53,17 @@ func (c *TaskHubGrpcClient) ScheduleNewOrchestration(ctx context.Context, orches
 	resp, err := c.client.StartInstance(ctx, req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return api.EmptyInstanceID, ctx.Err()
+			return "", ctx.Err()
 		}
-		return api.EmptyInstanceID, fmt.Errorf("failed to start orchestrator: %w", err)
+		return "", fmt.Errorf("failed to start orchestrator: %w", err)
 	}
-	return api.InstanceID(resp.InstanceId), nil
+	return resp.InstanceID, nil
 }
 
-// FetchOrchestrationMetadata fetches metadata for the specified orchestration from the configured task hub.
+// FetchWorkflowMetadata fetches metadata for the specified orchestration from the configured task hub.
 //
 // api.ErrInstanceNotFound is returned when the specified orchestration doesn't exist.
-func (c *TaskHubGrpcClient) FetchOrchestrationMetadata(ctx context.Context, id api.InstanceID, opts ...api.FetchOrchestrationMetadataOptions) (*backend.OrchestrationMetadata, error) {
+func (c *TaskHubGrpcClient) FetchWorkflowMetadata(ctx context.Context, id string, opts ...api.FetchWorkflowMetadataOptions) (*protos.WorkflowMetadata, error) {
 	req := makeGetInstanceRequest(id, opts)
 	resp, err := c.client.GetInstance(ctx, req)
 	if err != nil {
@@ -73,14 +72,14 @@ func (c *TaskHubGrpcClient) FetchOrchestrationMetadata(ctx context.Context, id a
 		}
 		return nil, fmt.Errorf("failed to fetch orchestration metadata: %w", err)
 	}
-	return makeOrchestrationMetadata(resp)
+	return makeWorkflowMetadata(resp)
 }
 
-// WaitForOrchestrationStart waits for an orchestration to start running and returns an [backend.OrchestrationMetadata] object that contains
+// WaitForWorkflowStart waits for an orchestration to start running and returns an [backend.WorkflowMetadata] object that contains
 // metadata about the started instance.
 //
 // api.ErrInstanceNotFound is returned when the specified orchestration doesn't exist.
-func (c *TaskHubGrpcClient) WaitForOrchestrationStart(ctx context.Context, id api.InstanceID, opts ...api.FetchOrchestrationMetadataOptions) (*backend.OrchestrationMetadata, error) {
+func (c *TaskHubGrpcClient) WaitForWorkflowStart(ctx context.Context, id string, opts ...api.FetchWorkflowMetadataOptions) (*protos.WorkflowMetadata, error) {
 	var resp *protos.GetInstanceResponse
 	var err error
 	err = backoff.Retry(func() error {
@@ -98,14 +97,14 @@ func (c *TaskHubGrpcClient) WaitForOrchestrationStart(ctx context.Context, id ap
 	if err != nil {
 		return nil, err
 	}
-	return makeOrchestrationMetadata(resp)
+	return makeWorkflowMetadata(resp)
 }
 
-// WaitForOrchestrationCompletion waits for an orchestration to complete and returns an [backend.OrchestrationMetadata] object that contains
+// WaitForWorkflowCompletion waits for an orchestration to complete and returns an [backend.WorkflowMetadata] object that contains
 // metadata about the completed instance.
 //
 // api.ErrInstanceNotFound is returned when the specified orchestration doesn't exist.
-func (c *TaskHubGrpcClient) WaitForOrchestrationCompletion(ctx context.Context, id api.InstanceID, opts ...api.FetchOrchestrationMetadataOptions) (*backend.OrchestrationMetadata, error) {
+func (c *TaskHubGrpcClient) WaitForWorkflowCompletion(ctx context.Context, id string, opts ...api.FetchWorkflowMetadataOptions) (*protos.WorkflowMetadata, error) {
 	var resp *protos.GetInstanceResponse
 	var err error
 	err = backoff.Retry(func() error {
@@ -123,13 +122,13 @@ func (c *TaskHubGrpcClient) WaitForOrchestrationCompletion(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	return makeOrchestrationMetadata(resp)
+	return makeWorkflowMetadata(resp)
 }
 
-// TerminateOrchestration terminates a running orchestration by causing it to stop receiving new events and
+// TerminateWorkflow terminates a running orchestration by causing it to stop receiving new events and
 // putting it directly into the TERMINATED state.
-func (c *TaskHubGrpcClient) TerminateOrchestration(ctx context.Context, id api.InstanceID, opts ...api.TerminateOptions) error {
-	req := &protos.TerminateRequest{InstanceId: string(id), Recursive: true}
+func (c *TaskHubGrpcClient) TerminateWorkflow(ctx context.Context, id string, opts ...api.TerminateOptions) error {
+	req := &protos.TerminateRequest{InstanceID: id, Recursive: true}
 	for _, configure := range opts {
 		if err := configure(req); err != nil {
 			return fmt.Errorf("failed to configure termination request: %w", err)
@@ -147,8 +146,8 @@ func (c *TaskHubGrpcClient) TerminateOrchestration(ctx context.Context, id api.I
 }
 
 // RaiseEvent sends an asynchronous event notification to a waiting orchestration.
-func (c *TaskHubGrpcClient) RaiseEvent(ctx context.Context, id api.InstanceID, eventName string, opts ...api.RaiseEventOptions) error {
-	req := &protos.RaiseEventRequest{InstanceId: string(id), Name: eventName}
+func (c *TaskHubGrpcClient) RaiseEvent(ctx context.Context, id string, eventName string, opts ...api.RaiseEventOptions) error {
+	req := &protos.RaiseEventRequest{InstanceID: id, Name: eventName}
 	for _, configure := range opts {
 		if err := configure(req); err != nil {
 			return fmt.Errorf("failed to configure raise event request: %w", err)
@@ -164,12 +163,12 @@ func (c *TaskHubGrpcClient) RaiseEvent(ctx context.Context, id api.InstanceID, e
 	return nil
 }
 
-// SuspendOrchestration suspends an orchestration instance, halting processing of its events until a "resume" operation resumes it.
+// SuspendWorkflow suspends an orchestration instance, halting processing of its events until a "resume" operation resumes it.
 //
 // Note that suspended orchestrations are still considered to be "running" even though they will not process events.
-func (c *TaskHubGrpcClient) SuspendOrchestration(ctx context.Context, id api.InstanceID, reason string) error {
+func (c *TaskHubGrpcClient) SuspendWorkflow(ctx context.Context, id string, reason string) error {
 	req := &protos.SuspendRequest{
-		InstanceId: string(id),
+		InstanceID: id,
 		Reason:     wrapperspb.String(reason),
 	}
 	if _, err := c.client.SuspendInstance(ctx, req); err != nil {
@@ -181,10 +180,10 @@ func (c *TaskHubGrpcClient) SuspendOrchestration(ctx context.Context, id api.Ins
 	return nil
 }
 
-// ResumeOrchestration resumes an orchestration instance that was previously suspended.
-func (c *TaskHubGrpcClient) ResumeOrchestration(ctx context.Context, id api.InstanceID, reason string) error {
+// ResumeWorkflow resumes an orchestration instance that was previously suspended.
+func (c *TaskHubGrpcClient) ResumeWorkflow(ctx context.Context, id string, reason string) error {
 	req := &protos.ResumeRequest{
-		InstanceId: string(id),
+		InstanceID: id,
 		Reason:     wrapperspb.String(reason),
 	}
 	if _, err := c.client.ResumeInstance(ctx, req); err != nil {
@@ -196,12 +195,12 @@ func (c *TaskHubGrpcClient) ResumeOrchestration(ctx context.Context, id api.Inst
 	return nil
 }
 
-// PurgeOrchestrationState deletes the state of the specified orchestration instance.
+// PurgeWorkflowState deletes the state of the specified orchestration instance.
 //
 // [api.api.ErrInstanceNotFound] is returned if the specified orchestration instance doesn't exist.
-func (c *TaskHubGrpcClient) PurgeOrchestrationState(ctx context.Context, id api.InstanceID, opts ...api.PurgeOptions) error {
+func (c *TaskHubGrpcClient) PurgeWorkflowState(ctx context.Context, id string, opts ...api.PurgeOptions) error {
 	req := &protos.PurgeInstancesRequest{
-		Request: &protos.PurgeInstancesRequest_InstanceId{InstanceId: string(id)},
+		Request: &protos.PurgeInstancesRequest_InstanceID{InstanceID: id},
 	}
 	for _, configure := range opts {
 		if err := configure(req); err != nil {
@@ -225,7 +224,7 @@ func (c *TaskHubGrpcClient) PurgeOrchestrationState(ctx context.Context, id api.
 // source instance ID. If not given, a random new instance ID will be
 // generated and returned. Can optionally give a new input to the target
 // event ID to rerun from.
-func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id api.InstanceID, eventID uint32, opts ...api.RerunOptions) (api.InstanceID, error) {
+func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id string, eventID uint32, opts ...api.RerunOptions) (string, error) {
 	req := &protos.RerunWorkflowFromEventRequest{
 		SourceInstanceID: string(id),
 		EventID:          eventID,
@@ -244,10 +243,10 @@ func (c *TaskHubGrpcClient) RerunWorkflowFromEvent(ctx context.Context, id api.I
 		return "", err
 	}
 
-	return api.InstanceID(resp.GetNewInstanceID()), nil
+	return string(resp.GetNewInstanceID()), nil
 }
 
-func (c *TaskHubGrpcClient) ListInstanceIDs(ctx context.Context, opts ...api.ListInstanceIDsOptions) (*backend.ListInstanceIDsResponse, error) {
+func (c *TaskHubGrpcClient) ListInstanceIDs(ctx context.Context, opts ...api.ListInstanceIDsOptions) (*protos.ListInstanceIDsResponse, error) {
 	req := protos.ListInstanceIDsRequest{
 		PageSize: ptr.Of(uint32(1024)),
 	}
@@ -267,9 +266,9 @@ func (c *TaskHubGrpcClient) ListInstanceIDs(ctx context.Context, opts ...api.Lis
 	return resp, nil
 }
 
-func (c *TaskHubGrpcClient) GetInstanceHistory(ctx context.Context, id api.InstanceID, opts ...api.GetInstanceHistoryOptions) (*backend.GetInstanceHistoryResponse, error) {
+func (c *TaskHubGrpcClient) GetInstanceHistory(ctx context.Context, id string, opts ...api.GetInstanceHistoryOptions) (*protos.GetInstanceHistoryResponse, error) {
 	req := protos.GetInstanceHistoryRequest{
-		InstanceId: id.String(),
+		InstanceID: id,
 	}
 
 	for _, configure := range opts {
@@ -287,9 +286,9 @@ func (c *TaskHubGrpcClient) GetInstanceHistory(ctx context.Context, id api.Insta
 	return resp, nil
 }
 
-func makeGetInstanceRequest(id api.InstanceID, opts []api.FetchOrchestrationMetadataOptions) *protos.GetInstanceRequest {
+func makeGetInstanceRequest(id string, opts []api.FetchWorkflowMetadataOptions) *protos.GetInstanceRequest {
 	req := &protos.GetInstanceRequest{
-		InstanceId:          string(id),
+		InstanceID:          id,
 		GetInputsAndOutputs: true,
 	}
 	for _, configure := range opts {
@@ -298,25 +297,25 @@ func makeGetInstanceRequest(id api.InstanceID, opts []api.FetchOrchestrationMeta
 	return req
 }
 
-// makeOrchestrationMetadata validates and converts protos.GetInstanceResponse to backend.OrchestrationMetadata
+// makeWorkflowMetadata validates and converts protos.GetInstanceResponse to backend.WorkflowMetadata
 // api.ErrInstanceNotFound is returned when the specified orchestration doesn't exist.
-func makeOrchestrationMetadata(resp *protos.GetInstanceResponse) (*backend.OrchestrationMetadata, error) {
+func makeWorkflowMetadata(resp *protos.GetInstanceResponse) (*protos.WorkflowMetadata, error) {
 	if !resp.Exists {
 		return nil, api.ErrInstanceNotFound
 	}
-	if resp.OrchestrationState == nil {
+	if resp.WorkflowState == nil {
 		return nil, fmt.Errorf("orchestration state is nil")
 	}
-	metadata := &backend.OrchestrationMetadata{
-		InstanceId:     resp.OrchestrationState.InstanceId,
-		Name:           resp.OrchestrationState.Name,
-		RuntimeStatus:  resp.OrchestrationState.OrchestrationStatus,
-		Input:          resp.OrchestrationState.Input,
-		CustomStatus:   resp.OrchestrationState.CustomStatus,
-		Output:         resp.OrchestrationState.Output,
-		CreatedAt:      resp.OrchestrationState.CreatedTimestamp,
-		LastUpdatedAt:  resp.OrchestrationState.LastUpdatedTimestamp,
-		FailureDetails: resp.OrchestrationState.FailureDetails,
+	metadata := &protos.WorkflowMetadata{
+		InstanceID:     resp.WorkflowState.InstanceID,
+		Name:           resp.WorkflowState.Name,
+		RuntimeStatus:  resp.WorkflowState.WorkflowStatus,
+		Input:          resp.WorkflowState.Input,
+		CustomStatus:   resp.WorkflowState.CustomStatus,
+		Output:         resp.WorkflowState.Output,
+		CreatedAt:      resp.WorkflowState.CreatedTimestamp,
+		LastUpdatedAt:  resp.WorkflowState.LastUpdatedTimestamp,
+		FailureDetails: resp.WorkflowState.FailureDetails,
 	}
 	return metadata, nil
 }

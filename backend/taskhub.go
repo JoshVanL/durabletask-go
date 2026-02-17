@@ -15,12 +15,12 @@ type TaskHubWorker interface {
 
 type taskHubWorker struct {
 	backend             Backend
-	orchestrationWorker TaskWorker[*OrchestrationWorkItem]
+	orchestrationWorker TaskWorker[*WorkflowWorkItem]
 	activityWorker      TaskWorker[*ActivityWorkItem]
 	logger              Logger
 }
 
-func NewTaskHubWorker(be Backend, orchestrationWorker TaskWorker[*OrchestrationWorkItem], activityWorker TaskWorker[*ActivityWorkItem], logger Logger) TaskHubWorker {
+func NewTaskHubWorker(be Backend, orchestrationWorker TaskWorker[*WorkflowWorkItem], activityWorker TaskWorker[*ActivityWorkItem], logger Logger) TaskHubWorker {
 	return &taskHubWorker{
 		backend:             be,
 		orchestrationWorker: orchestrationWorker,

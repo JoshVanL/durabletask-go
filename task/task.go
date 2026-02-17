@@ -23,7 +23,7 @@ type Task interface {
 }
 
 type completableTask struct {
-	orchestrationCtx  *OrchestrationContext
+	orchestrationCtx  *WorkflowContext
 	isCompleted       bool
 	isCanceled        bool
 	rawResult         []byte
@@ -32,7 +32,7 @@ type completableTask struct {
 	taskExecutionId   string
 }
 
-func newTask(ctx *OrchestrationContext) *completableTask {
+func newTask(ctx *WorkflowContext) *completableTask {
 	return &completableTask{
 		orchestrationCtx: ctx,
 	}

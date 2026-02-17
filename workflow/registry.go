@@ -27,7 +27,7 @@ func (r *Registry) AddWorkflow(w Workflow) error {
 // AddWorkflowN adds an orchestrator function to the registry with a
 // specified name.
 func (r *Registry) AddWorkflowN(name string, w Workflow) error {
-	return r.registry.AddOrchestratorN(name, func(ctx *task.OrchestrationContext) (any, error) {
+	return r.registry.AddWorkflowN(name, func(ctx *task.WorkflowContext) (any, error) {
 		return w(&WorkflowContext{ctx})
 	})
 }
@@ -48,14 +48,14 @@ func (r *Registry) AddActivityN(name string, a Activity) error {
 
 // AddVersionedWorkflow adds a versioned workflow function to the registry with a specified name.
 func (r *Registry) AddVersionedWorkflow(canonicalName string, isLatest bool, w Workflow) error {
-	return r.registry.AddVersionedOrchestrator(canonicalName, isLatest, func(ctx *task.OrchestrationContext) (any, error) {
+	return r.registry.AddVersionedWorkflow(canonicalName, isLatest, func(ctx *task.WorkflowContext) (any, error) {
 		return w(&WorkflowContext{ctx})
 	})
 }
 
 // AddVersionedWorkflowN adds a versioned workflow function to the registry with a specified name.
 func (r *Registry) AddVersionedWorkflowN(canonicalName string, name string, isLatest bool, w Workflow) error {
-	return r.registry.AddVersionedOrchestratorN(canonicalName, name, isLatest, func(ctx *task.OrchestrationContext) (any, error) {
+	return r.registry.AddVersionedWorkflowN(canonicalName, name, isLatest, func(ctx *task.WorkflowContext) (any, error) {
 		return w(&WorkflowContext{ctx})
 	})
 }

@@ -7,15 +7,13 @@ import (
 
 var (
 	ErrInstanceNotFound  = errors.New("no such instance exists")
-	ErrNotStarted        = errors.New("orchestration has not started")
-	ErrNotCompleted      = errors.New("orchestration has not yet completed")
-	ErrNoFailures        = errors.New("orchestration did not report failure details")
-	ErrDuplicateInstance = errors.New("orchestration instance already exists")
-	ErrIgnoreInstance    = errors.New("ignore creating orchestration instance")
+	ErrNotStarted        = errors.New("workflow has not started")
+	ErrNotCompleted      = errors.New("workflow has not yet completed")
+	ErrNoFailures        = errors.New("workflow did not report failure details")
+	ErrDuplicateInstance = errors.New("workflow instance already exists")
+	ErrIgnoreInstance    = errors.New("ignore creating workflow instance")
 	ErrTaskCancelled     = errors.New("task was cancelled")
 	ErrStalled           = errors.New("workflow is stalled")
-
-	EmptyInstanceID = InstanceID("")
 )
 
 type UnknownTaskIDError struct {
@@ -65,7 +63,7 @@ func NewUnsupportedVersionError() error {
 }
 
 func (e *UnsupportedVersionError) Error() string {
-	return "orchestrator version is not registered"
+	return "workflow version is not registered"
 }
 
 func IsUnsupportedVersionError(err error) bool {

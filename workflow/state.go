@@ -1,45 +1,44 @@
 package workflow
 
 import (
-	"github.com/dapr/durabletask-go/api"
 	"github.com/dapr/durabletask-go/api/protos"
 )
 
 const (
-	StatusRunning        = api.RUNTIME_STATUS_RUNNING
-	StatusCompleted      = api.RUNTIME_STATUS_COMPLETED
-	StatusContinuedAsNew = api.RUNTIME_STATUS_CONTINUED_AS_NEW
-	StatusFailed         = api.RUNTIME_STATUS_FAILED
-	StatusCanceled       = api.RUNTIME_STATUS_CANCELED
-	StatusTerminated     = api.RUNTIME_STATUS_TERMINATED
-	StatusPending        = api.RUNTIME_STATUS_PENDING
-	StatusSuspended      = api.RUNTIME_STATUS_SUSPENDED
-	StatusStalled        = api.RUNTIME_STATUS_STALLED
+	StatusRunning        = protos.WorkflowStatus_WORKFLOW_STATUS_RUNNING
+	StatusCompleted      = protos.WorkflowStatus_WORKFLOW_STATUS_COMPLETED
+	StatusContinuedAsNew = protos.WorkflowStatus_WORKFLOW_STATUS_CONTINUED_AS_NEW
+	StatusFailed         = protos.WorkflowStatus_WORKFLOW_STATUS_FAILED
+	StatusCanceled       = protos.WorkflowStatus_WORKFLOW_STATUS_CANCELED
+	StatusTerminated     = protos.WorkflowStatus_WORKFLOW_STATUS_TERMINATED
+	StatusPending        = protos.WorkflowStatus_WORKFLOW_STATUS_PENDING
+	StatusSuspended      = protos.WorkflowStatus_WORKFLOW_STATUS_SUSPENDED
+	StatusStalled        = protos.WorkflowStatus_WORKFLOW_STATUS_STALLED
 )
 
-type WorkflowMetadata protos.OrchestrationMetadata
+type WorkflowMetadata protos.WorkflowMetadata
 type ListInstanceIDsResponse protos.ListInstanceIDsResponse
 type GetInstanceHistoryResponse protos.GetInstanceHistoryResponse
 
 func (w WorkflowMetadata) String() string {
 	switch w.RuntimeStatus {
-	case api.RUNTIME_STATUS_RUNNING:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_RUNNING:
 		return "RUNNING"
-	case api.RUNTIME_STATUS_COMPLETED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_COMPLETED:
 		return "COMPLETED"
-	case api.RUNTIME_STATUS_CONTINUED_AS_NEW:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_CONTINUED_AS_NEW:
 		return "CONTINUED_AS_NEW"
-	case api.RUNTIME_STATUS_FAILED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_FAILED:
 		return "FAILED"
-	case api.RUNTIME_STATUS_CANCELED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_CANCELED:
 		return "CANCELED"
-	case api.RUNTIME_STATUS_TERMINATED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_TERMINATED:
 		return "TERMINATED"
-	case api.RUNTIME_STATUS_PENDING:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_PENDING:
 		return "PENDING"
-	case api.RUNTIME_STATUS_SUSPENDED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_SUSPENDED:
 		return "SUSPENDED"
-	case api.RUNTIME_STATUS_STALLED:
+	case protos.WorkflowStatus_WORKFLOW_STATUS_STALLED:
 		return "STALLED"
 	default:
 		return ""

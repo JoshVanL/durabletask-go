@@ -10,8 +10,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-
-	"github.com/dapr/durabletask-go/api"
 )
 
 type (
@@ -32,7 +30,7 @@ func AssertSpanSequence(t assert.TestingT, spans []trace.ReadOnlySpan, spanAsser
 }
 
 // assertOrchestratorCreated validates a create_orchestration span
-func AssertOrchestratorCreated(name string, id api.InstanceID, optionalAsserts ...spanAttributeValidator) spanValidator {
+func AssertOrchestratorCreated(name string, id string, optionalAsserts ...spanAttributeValidator) spanValidator {
 	spanName := fmt.Sprintf("create_orchestration||%s", name)
 	opts := []spanAttributeValidator{
 		assertTaskType("orchestration"),
@@ -44,7 +42,7 @@ func AssertOrchestratorCreated(name string, id api.InstanceID, optionalAsserts .
 }
 
 // assertOrchestratorCreated validates an orchestration span
-func AssertOrchestratorExecuted(name string, id api.InstanceID, status string, optionalAsserts ...spanAttributeValidator) spanValidator {
+func AssertOrchestratorExecuted(name string, id string, status string, optionalAsserts ...spanAttributeValidator) spanValidator {
 	spanName := fmt.Sprintf("orchestration||%s", name)
 	opts := []spanAttributeValidator{
 		assertTaskType("orchestration"),
@@ -56,7 +54,7 @@ func AssertOrchestratorExecuted(name string, id api.InstanceID, status string, o
 	return AssertSpan(spanName, opts...)
 }
 
-func AssertActivity(name string, id api.InstanceID, taskID int64, optionalAsserts ...spanAttributeValidator) spanValidator {
+func AssertActivity(name string, id string, taskID int64, optionalAsserts ...spanAttributeValidator) spanValidator {
 	spanName := fmt.Sprintf("activity||%s", name)
 	opts := []spanAttributeValidator{
 		assertTaskType("activity"),
@@ -68,7 +66,7 @@ func AssertActivity(name string, id api.InstanceID, taskID int64, optionalAssert
 	return AssertSpan(spanName, opts...)
 }
 
-func AssertTimer(id api.InstanceID, optionalAsserts ...spanAttributeValidator) spanValidator {
+func AssertTimer(id string, optionalAsserts ...spanAttributeValidator) spanValidator {
 	opts := []spanAttributeValidator{
 		assertInstanceID(id),
 		assertTimerFired(),
@@ -203,7 +201,7 @@ func AssertTaskID(expectedTaskID int64) spanAttributeValidator {
 	}
 }
 
-func assertInstanceID(expectedID api.InstanceID) spanAttributeValidator {
+func assertInstanceID(expectedID string) spanAttributeValidator {
 	return func(t assert.TestingT, span trace.ReadOnlySpan) bool {
 		return assert.Contains(t, span.Attributes(), attribute.KeyValue{
 			Key:   "durabletask.task.instance_id",

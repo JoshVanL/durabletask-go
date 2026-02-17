@@ -9,9 +9,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/dapr/durabletask-go/api"
 	"github.com/dapr/durabletask-go/api/protos"
 	"github.com/dapr/durabletask-go/backend"
+	"github.com/dapr/kit/ptr"
 )
 
 type taskExecutor struct {
@@ -26,7 +26,7 @@ func NewTaskExecutor(registry *TaskRegistry) backend.Executor {
 }
 
 // ExecuteActivity implements backend.Executor and executes an activity function in the current goroutine.
-func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, e *protos.HistoryEvent) (response *protos.HistoryEvent, err error) {
+func (te *taskExecutor) ExecuteActivity(ctx context.Context, id string, e *protos.HistoryEvent) (response *protos.HistoryEvent, err error) {
 	ts := e.GetTaskScheduled()
 	if ts == nil {
 		// No clean way to deal with this other than to abandon it
@@ -38,12 +38,12 @@ func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, 
 		invoker, ok = te.Registry.activities["*"]
 		if !ok {
 			return &protos.HistoryEvent{
-				EventId:   -1,
+				EventID:   ptr.Of(int32(-1)),
 				Timestamp: timestamppb.Now(),
 				EventType: &protos.HistoryEvent_TaskFailed{
 					TaskFailed: &protos.TaskFailedEvent{
-						TaskScheduledId: e.EventId,
-						TaskExecutionId: ts.GetTaskExecutionId(),
+						TaskScheduledID: e.GetEventID(),
+						TaskExecutionID: ts.GetTaskExecutionID(),
 						FailureDetails: &protos.TaskFailureDetails{
 							ErrorType:    "TaskActivityNotRegistered",
 							ErrorMessage: fmt.Sprintf("no task activity named '%s' was registered", ts.Name),
@@ -53,18 +53,18 @@ func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, 
 			}, nil
 		}
 	}
-	activityCtx := newTaskActivityContext(ctx, e.EventId, ts)
+	activityCtx := newTaskActivityContext(ctx, e.GetEventID(), ts)
 
 	// convert panics into activity failures
 	defer func() {
 		panicVal := recover()
 		if panicVal != nil {
 			response = &protos.HistoryEvent{
-				EventId:   -1,
+				EventID:   ptr.Of(int32(-1)),
 				Timestamp: timestamppb.Now(),
 				EventType: &protos.HistoryEvent_TaskFailed{
 					TaskFailed: &protos.TaskFailedEvent{
-						TaskScheduledId: e.EventId,
+						TaskScheduledID: e.GetEventID(),
 						FailureDetails: &protos.TaskFailureDetails{
 							ErrorType:    "TaskActivityPanic",
 							ErrorMessage: fmt.Sprintf("panic: %v", panicVal),
@@ -78,12 +78,12 @@ func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, 
 	result, err := invoker(activityCtx)
 	if err != nil {
 		return &protos.HistoryEvent{
-			EventId:   -1,
+			EventID:   ptr.Of(int32(-1)),
 			Timestamp: timestamppb.Now(),
 			EventType: &protos.HistoryEvent_TaskFailed{
 				TaskFailed: &protos.TaskFailedEvent{
-					TaskScheduledId: e.EventId,
-					TaskExecutionId: ts.GetTaskExecutionId(),
+					TaskScheduledID: e.GetEventID(),
+					TaskExecutionID: ts.GetTaskExecutionID(),
 					FailureDetails: &protos.TaskFailureDetails{
 						ErrorType:    fmt.Sprintf("%T", err),
 						ErrorMessage: fmt.Sprintf("%+v", err),
@@ -96,12 +96,12 @@ func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, 
 	bytes, err := marshalData(result)
 	if err != nil {
 		return &protos.HistoryEvent{
-			EventId:   -1,
+			EventID:   ptr.Of(int32(-1)),
 			Timestamp: timestamppb.Now(),
 			EventType: &protos.HistoryEvent_TaskFailed{
 				TaskFailed: &protos.TaskFailedEvent{
-					TaskScheduledId: e.EventId,
-					TaskExecutionId: ts.GetTaskExecutionId(),
+					TaskScheduledID: e.GetEventID(),
+					TaskExecutionID: ts.GetTaskExecutionID(),
 					FailureDetails: &protos.TaskFailureDetails{
 						ErrorType:    fmt.Sprintf("%T", err),
 						ErrorMessage: fmt.Sprintf("%+v", err),
@@ -115,38 +115,38 @@ func (te *taskExecutor) ExecuteActivity(ctx context.Context, id api.InstanceID, 
 		rawResult = wrapperspb.String(string(bytes))
 	}
 	return &protos.HistoryEvent{
-		EventId:   -1,
+		EventID:   ptr.Of(int32(-1)),
 		Timestamp: timestamppb.New(time.Now()),
 		EventType: &protos.HistoryEvent_TaskCompleted{
 			TaskCompleted: &protos.TaskCompletedEvent{
-				TaskScheduledId: e.EventId,
-				TaskExecutionId: ts.GetTaskExecutionId(),
+				TaskScheduledID: e.GetEventID(),
+				TaskExecutionID: ts.GetTaskExecutionID(),
 				Result:          rawResult,
 			},
 		},
 	}, nil
 }
 
-// ExecuteOrchestrator implements backend.Executor and executes an orchestrator function in the current goroutine.
-func (te *taskExecutor) ExecuteOrchestrator(ctx context.Context, id api.InstanceID, oldEvents []*protos.HistoryEvent, newEvents []*protos.HistoryEvent) (*protos.OrchestratorResponse, error) {
-	orchestrationCtx := NewOrchestrationContext(te.Registry, id, oldEvents, newEvents)
+// ExecuteWorkflow implements backend.Executor and executes an orchestrator function in the current goroutine.
+func (te *taskExecutor) ExecuteWorkflow(ctx context.Context, id string, oldEvents []*protos.HistoryEvent, newEvents []*protos.HistoryEvent) (*protos.WorkflowResponse, error) {
+	orchestrationCtx := NewWorkflowContext(te.Registry, id, oldEvents, newEvents)
 	actions := orchestrationCtx.start()
 
-	response := &protos.OrchestratorResponse{
-		InstanceId:   string(id),
+	response := &protos.WorkflowResponse{
+		InstanceID:   id,
 		Actions:      actions,
 		CustomStatus: wrapperspb.String(orchestrationCtx.customStatus),
 	}
 
 	if len(orchestrationCtx.encounteredPatches) > 0 {
 		if response.Version == nil {
-			response.Version = new(protos.OrchestrationVersion)
+			response.Version = new(protos.WorkflowVersion)
 		}
 		response.Version.Patches = orchestrationCtx.encounteredPatches
 	}
 	if orchestrationCtx.VersionName != nil {
 		if response.Version == nil {
-			response.Version = new(protos.OrchestrationVersion)
+			response.Version = new(protos.WorkflowVersion)
 		}
 		response.Version.Name = orchestrationCtx.VersionName
 	}

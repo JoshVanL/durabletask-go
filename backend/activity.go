@@ -7,7 +7,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dapr/durabletask-go/api"
 	"github.com/dapr/durabletask-go/api/helpers"
 	"github.com/dapr/durabletask-go/api/protos"
 )
@@ -18,7 +17,7 @@ type activityProcessor struct {
 }
 
 type ActivityExecutor interface {
-	ExecuteActivity(context.Context, api.InstanceID, *protos.HistoryEvent) (*protos.HistoryEvent, error)
+	ExecuteActivity(context.Context, string, *protos.HistoryEvent) (*protos.HistoryEvent, error)
 }
 
 func NewActivityTaskWorker(be Backend, executor ActivityExecutor, logger Logger, opts ...NewTaskWorkerOptions) TaskWorker[*ActivityWorkItem] {
@@ -55,7 +54,7 @@ func (p *activityProcessor) ProcessWorkItem(ctx context.Context, awi *ActivityWo
 		return fmt.Errorf("%v: failed to parse activity trace context: %w", awi.InstanceID, err)
 	}
 	var span trace.Span
-	ctx, span = helpers.StartNewActivitySpan(ctx, ts.Name, ts.Version.GetValue(), string(awi.InstanceID), awi.NewEvent.EventId)
+	ctx, span = helpers.StartNewActivitySpan(ctx, ts.Name, string(awi.InstanceID), awi.NewEvent.GetEventID())
 	if span != nil {
 		defer func() {
 			if r := recover(); r != nil {
