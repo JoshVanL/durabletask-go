@@ -617,7 +617,7 @@ func (be *sqliteBackend) WatchWorkflowRuntimeStatus(ctx context.Context, id api.
 			}
 			return ctx.Err()
 		case <-t.C:
-			meta, err := be.GetWorkflowMetadata(ctx, id)
+			meta, err := be.GetWorkflowMetadata(ctx, id, nil)
 			if err != nil {
 				return err
 			}
@@ -631,8 +631,10 @@ func (be *sqliteBackend) WatchWorkflowRuntimeStatus(ctx context.Context, id api.
 	return nil
 }
 
-// GetWorkflowMetadata implements backend.Backend
-func (be *sqliteBackend) GetWorkflowMetadata(ctx context.Context, iid api.InstanceID) (*backend.WorkflowMetadata, error) {
+// GetWorkflowMetadata implements backend.Backend. The router argument is
+// accepted for interface conformance; the sqlite backend is single-app and
+// ignores cross-app routing.
+func (be *sqliteBackend) GetWorkflowMetadata(ctx context.Context, iid api.InstanceID, _ *protos.TaskRouter) (*backend.WorkflowMetadata, error) {
 	if err := be.ensureDB(); err != nil {
 		return nil, err
 	}

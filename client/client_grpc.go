@@ -167,10 +167,15 @@ func (c *TaskHubGrpcClient) RaiseEvent(ctx context.Context, id api.InstanceID, e
 // SuspendWorkflow suspends a workflow instance, halting processing of its events until a "resume" operation resumes it.
 //
 // Note that suspended workflows are still considered to be "running" even though they will not process events.
-func (c *TaskHubGrpcClient) SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string) error {
+func (c *TaskHubGrpcClient) SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.SuspendOptions) error {
 	req := &protos.SuspendRequest{
 		InstanceId: string(id),
 		Reason:     wrapperspb.String(reason),
+	}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return fmt.Errorf("failed to configure suspend request: %w", err)
+		}
 	}
 	if _, err := c.client.SuspendInstance(ctx, req); err != nil {
 		if ctx.Err() != nil {
@@ -182,10 +187,15 @@ func (c *TaskHubGrpcClient) SuspendWorkflow(ctx context.Context, id api.Instance
 }
 
 // ResumeWorkflow resumes a workflow instance that was previously suspended.
-func (c *TaskHubGrpcClient) ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string) error {
+func (c *TaskHubGrpcClient) ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.ResumeOptions) error {
 	req := &protos.ResumeRequest{
 		InstanceId: string(id),
 		Reason:     wrapperspb.String(reason),
+	}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return fmt.Errorf("failed to configure resume request: %w", err)
+		}
 	}
 	if _, err := c.client.ResumeInstance(ctx, req); err != nil {
 		if ctx.Err() != nil {

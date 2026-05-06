@@ -66,11 +66,17 @@ func (a *Applier) Actions(s *protos.WorkflowRuntimeState, customStatus *wrappers
 
 	for _, action := range actions {
 		if action.Router == nil {
-			action.Router = &protos.TaskRouter{
-				SourceAppID: a.appID,
-			}
+			action.Router = &protos.TaskRouter{SourceAppID: a.appID}
 		} else {
 			action.Router.SourceAppID = a.appID
+		}
+		// Stamp source namespace on every action so events flowing back
+		// to a parent in another namespace can identify their origin.
+		// Empty namespace (single-namespace deployments) leaves the
+		// optional field unset.
+		if a.namespace != "" {
+			ns := a.namespace
+			action.Router.SourceAppNamespace = &ns
 		}
 
 		if completedAction := action.GetCompleteWorkflow(); completedAction != nil {
@@ -78,7 +84,7 @@ func (a *Applier) Actions(s *protos.WorkflowRuntimeState, customStatus *wrappers
 				// Capture a propagated chunk from the prior generation BEFORE we
 				// wipe state, so the new generation can continue the chain
 				if scope := canForwardScope(receivedHistory); scope != protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_NONE {
-					result.NewIncomingHistory = AssembleProtoPropagatedHistory(s, scope, receivedHistory, a.appID)
+					result.NewIncomingHistory = AssembleProtoPropagatedHistory(s, scope, receivedHistory, a.appID, a.namespace)
 				}
 
 				newState := NewWorkflowRuntimeState(s.InstanceId, customStatus, []*protos.HistoryEvent{})
@@ -248,7 +254,7 @@ func (a *Applier) Actions(s *protos.WorkflowRuntimeState, customStatus *wrappers
 				// In-process sqlite/postgres backends in this repo do not
 				// consume OutgoingHistory, so chunks built here are
 				// effectively no-ops on those backends.
-				result.OutgoingHistory[action.Id] = AssembleProtoPropagatedHistory(s, scheduleTask.GetHistoryPropagationScope(), receivedHistory, a.appID)
+				result.OutgoingHistory[action.Id] = AssembleProtoPropagatedHistory(s, scheduleTask.GetHistoryPropagationScope(), receivedHistory, a.appID, a.namespace)
 			}
 		} else if createSO := action.GetCreateChildWorkflow(); createSO != nil {
 			// Autogenerate an instance ID for the child workflow if none is provided, using a
@@ -300,7 +306,7 @@ func (a *Applier) Actions(s *protos.WorkflowRuntimeState, customStatus *wrappers
 				// sqlite/postgres backends in this repo do not consume
 				// PendingMessages.PropagatedHistory, so chunks built here
 				// are effectively no-ops on those backends.
-				msg.PropagatedHistory = AssembleProtoPropagatedHistory(s, createSO.GetHistoryPropagationScope(), receivedHistory, a.appID)
+				msg.PropagatedHistory = AssembleProtoPropagatedHistory(s, createSO.GetHistoryPropagationScope(), receivedHistory, a.appID, a.namespace)
 			}
 			s.PendingMessages = append(s.PendingMessages, msg)
 		} else if sendEvent := action.GetSendEvent(); sendEvent != nil {

@@ -176,7 +176,7 @@ func (be *postgresBackend) WatchWorkflowRuntimeStatus(ctx context.Context, id ap
 			}
 			return ctx.Err()
 		case <-t.C:
-			meta, err := be.GetWorkflowMetadata(ctx, id)
+			meta, err := be.GetWorkflowMetadata(ctx, id, nil)
 			if err != nil {
 				return err
 			}
@@ -718,8 +718,10 @@ func (be *postgresBackend) AddNewWorkflowEvent(ctx context.Context, iid api.Inst
 	return nil
 }
 
-// GetWorkflowMetadata implements backend.Backend
-func (be *postgresBackend) GetWorkflowMetadata(ctx context.Context, iid api.InstanceID) (*backend.WorkflowMetadata, error) {
+// GetWorkflowMetadata implements backend.Backend. The router argument is
+// accepted for interface conformance; the postgres backend is single-app
+// and ignores cross-app routing.
+func (be *postgresBackend) GetWorkflowMetadata(ctx context.Context, iid api.InstanceID, _ *protos.TaskRouter) (*backend.WorkflowMetadata, error) {
 	if err := be.ensureDB(); err != nil {
 		return nil, err
 	}

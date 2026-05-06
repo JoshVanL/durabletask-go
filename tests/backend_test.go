@@ -343,7 +343,7 @@ func Test_UninitializedBackend(t *testing.T) {
 		assert.Equal(t, err, backend.ErrNotInitialized)
 		err = be.CreateWorkflowInstance(ctx, nil)
 		assert.Equal(t, err, backend.ErrNotInitialized)
-		_, err = be.GetWorkflowMetadata(ctx, api.InstanceID(""))
+		_, err = be.GetWorkflowMetadata(ctx, api.InstanceID(""), nil)
 		assert.Equal(t, err, backend.ErrNotInitialized)
 		_, err = be.GetWorkflowRuntimeState(ctx, nil)
 		assert.Equal(t, err, backend.ErrNotInitialized)
@@ -358,7 +358,7 @@ func Test_GetNonExistingMetadata(t *testing.T) {
 	for i, be := range backends {
 		initTest(t, be, i, true)
 
-		_, err := be.GetWorkflowMetadata(ctx, api.InstanceID("bogus"))
+		_, err := be.GetWorkflowMetadata(ctx, api.InstanceID("bogus"), nil)
 		assert.ErrorIs(t, err, api.ErrInstanceNotFound)
 	}
 }
@@ -398,7 +398,7 @@ func Test_PurgeWorkflowState(t *testing.T) {
 		}
 
 		// The metadata should be gone
-		if _, err := be.GetWorkflowMetadata(ctx, instanceID); !assert.ErrorIs(t, err, api.ErrInstanceNotFound) {
+		if _, err := be.GetWorkflowMetadata(ctx, instanceID, nil); !assert.ErrorIs(t, err, api.ErrInstanceNotFound) {
 			return
 		}
 
@@ -517,7 +517,7 @@ func getWorkflowRuntimeState(t assert.TestingT, be backend.Backend, wi *backend.
 }
 
 func getWorkflowMetadata(t assert.TestingT, be backend.Backend, iid api.InstanceID) (*backend.WorkflowMetadata, bool) {
-	metadata, err := be.GetWorkflowMetadata(ctx, iid)
+	metadata, err := be.GetWorkflowMetadata(ctx, iid, nil)
 	if assert.NoError(t, err) && assert.NotNil(t, metadata) {
 		return metadata, assert.Equal(t, iid, api.InstanceID(metadata.InstanceId))
 	}

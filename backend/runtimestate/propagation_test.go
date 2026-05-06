@@ -57,6 +57,7 @@ func TestAssembleProtoPropagatedHistory_OwnHistory_SingleApp(t *testing.T) {
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_OWN_HISTORY,
 		nil,    // no ancestor
 		"appA", // appID
+		"",     // namespace
 	)
 
 	require.NotNil(t, ph)
@@ -65,7 +66,7 @@ func TestAssembleProtoPropagatedHistory_OwnHistory_SingleApp(t *testing.T) {
 
 	// Single chunk for appA with instance ID and workflow name
 	require.Len(t, ph.Chunks, 1)
-	assert.Equal(t, "appA", ph.Chunks[0].AppId)
+	assert.Equal(t, "appA", ph.Chunks[0].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(0), ph.Chunks[0].StartEventIndex)
 	assert.Equal(t, int32(3), ph.Chunks[0].EventCount)
 	assert.Equal(t, "wf-001", ph.Chunks[0].InstanceId)
@@ -84,6 +85,7 @@ func TestAssembleProtoPropagatedHistory_Lineage_NoAncestor(t *testing.T) {
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_LINEAGE,
 		nil, // no ancestor
 		"appA",
+		"",
 	)
 
 	require.NotNil(t, ph)
@@ -91,7 +93,7 @@ func TestAssembleProtoPropagatedHistory_Lineage_NoAncestor(t *testing.T) {
 
 	// Single chunk — no ancestor to prepend
 	require.Len(t, ph.Chunks, 1)
-	assert.Equal(t, "appA", ph.Chunks[0].AppId)
+	assert.Equal(t, "appA", ph.Chunks[0].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(0), ph.Chunks[0].StartEventIndex)
 	assert.Equal(t, int32(1), ph.Chunks[0].EventCount)
 }
@@ -104,7 +106,7 @@ func TestAssembleProtoPropagatedHistory_Lineage_WithAncestor(t *testing.T) {
 			makeTaskScheduled(1, "ancestorAct2"),
 		},
 		Chunks: []*protos.PropagatedHistoryChunk{
-			{AppId: "appA", StartEventIndex: 0, EventCount: 2, InstanceId: "wf-parent", WorkflowName: "ParentWf"},
+			{Router: &protos.TaskRouter{SourceAppID: "appA"}, StartEventIndex: 0, EventCount: 2, InstanceId: "wf-parent", WorkflowName: "ParentWf"},
 		},
 	}
 
@@ -125,6 +127,7 @@ func TestAssembleProtoPropagatedHistory_Lineage_WithAncestor(t *testing.T) {
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_LINEAGE,
 		ancestor,
 		"appB",
+		"",
 	)
 
 	require.NotNil(t, ph)
@@ -141,14 +144,14 @@ func TestAssembleProtoPropagatedHistory_Lineage_WithAncestor(t *testing.T) {
 	require.Len(t, ph.Chunks, 2)
 
 	// Ancestor chunk preserves its metadata
-	assert.Equal(t, "appA", ph.Chunks[0].AppId)
+	assert.Equal(t, "appA", ph.Chunks[0].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(0), ph.Chunks[0].StartEventIndex)
 	assert.Equal(t, int32(2), ph.Chunks[0].EventCount)
 	assert.Equal(t, "wf-parent", ph.Chunks[0].InstanceId)
 	assert.Equal(t, "ParentWf", ph.Chunks[0].WorkflowName)
 
 	// Own chunk has appB's metadata
-	assert.Equal(t, "appB", ph.Chunks[1].AppId)
+	assert.Equal(t, "appB", ph.Chunks[1].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(2), ph.Chunks[1].StartEventIndex)
 	assert.Equal(t, int32(3), ph.Chunks[1].EventCount)
 	assert.Equal(t, "wf-child", ph.Chunks[1].InstanceId)
@@ -161,7 +164,7 @@ func TestAssembleProtoPropagatedHistory_OwnHistory_IgnoresAncestor(t *testing.T)
 			makeTaskScheduled(0, "ancestorAct"),
 		},
 		Chunks: []*protos.PropagatedHistoryChunk{
-			{AppId: "appA", StartEventIndex: 0, EventCount: 1},
+			{Router: &protos.TaskRouter{SourceAppID: "appA"}, StartEventIndex: 0, EventCount: 1},
 		},
 	}
 
@@ -176,6 +179,7 @@ func TestAssembleProtoPropagatedHistory_OwnHistory_IgnoresAncestor(t *testing.T)
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_OWN_HISTORY,
 		ancestor, // passed but should be ignored
 		"appB",
+		"",
 	)
 
 	require.NotNil(t, ph)
@@ -186,7 +190,7 @@ func TestAssembleProtoPropagatedHistory_OwnHistory_IgnoresAncestor(t *testing.T)
 
 	// Only appB's chunk
 	require.Len(t, ph.Chunks, 1)
-	assert.Equal(t, "appB", ph.Chunks[0].AppId)
+	assert.Equal(t, "appB", ph.Chunks[0].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(0), ph.Chunks[0].StartEventIndex)
 	assert.Equal(t, int32(1), ph.Chunks[0].EventCount)
 }
@@ -201,8 +205,8 @@ func TestAssembleProtoPropagatedHistory_Lineage_ThreeHopChain(t *testing.T) {
 			makeTaskScheduled(0, "actB"),
 		},
 		Chunks: []*protos.PropagatedHistoryChunk{
-			{AppId: "appA", StartEventIndex: 0, EventCount: 1},
-			{AppId: "appB", StartEventIndex: 1, EventCount: 1},
+			{Router: &protos.TaskRouter{SourceAppID: "appA"}, StartEventIndex: 0, EventCount: 1},
+			{Router: &protos.TaskRouter{SourceAppID: "appB"}, StartEventIndex: 1, EventCount: 1},
 		},
 	}
 
@@ -218,6 +222,7 @@ func TestAssembleProtoPropagatedHistory_Lineage_ThreeHopChain(t *testing.T) {
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_LINEAGE,
 		ancestor,
 		"appC",
+		"",
 	)
 
 	require.NotNil(t, ph)
@@ -226,15 +231,15 @@ func TestAssembleProtoPropagatedHistory_Lineage_ThreeHopChain(t *testing.T) {
 	// 3 chunks, one per app
 	require.Len(t, ph.Chunks, 3)
 
-	assert.Equal(t, "appA", ph.Chunks[0].AppId)
+	assert.Equal(t, "appA", ph.Chunks[0].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(0), ph.Chunks[0].StartEventIndex)
 	assert.Equal(t, int32(1), ph.Chunks[0].EventCount)
 
-	assert.Equal(t, "appB", ph.Chunks[1].AppId)
+	assert.Equal(t, "appB", ph.Chunks[1].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(1), ph.Chunks[1].StartEventIndex)
 	assert.Equal(t, int32(1), ph.Chunks[1].EventCount)
 
-	assert.Equal(t, "appC", ph.Chunks[2].AppId)
+	assert.Equal(t, "appC", ph.Chunks[2].GetRouter().GetSourceAppID())
 	assert.Equal(t, int32(2), ph.Chunks[2].StartEventIndex)
 	assert.Equal(t, int32(1), ph.Chunks[2].EventCount)
 }
@@ -247,6 +252,7 @@ func TestAssembleProtoPropagatedHistory_EmptyState(t *testing.T) {
 		protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_OWN_HISTORY,
 		nil,
 		"appA",
+		"",
 	)
 
 	require.NotNil(t, ph)

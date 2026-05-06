@@ -408,7 +408,7 @@ func TestPropagatedHistoryFromProto(t *testing.T) {
 		},
 		Scope: protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_LINEAGE,
 		Chunks: []*protos.PropagatedHistoryChunk{
-			{AppId: "app1", StartEventIndex: 0, EventCount: 2, InstanceId: "wf-1", WorkflowName: "MyWf"},
+			{Router: &protos.TaskRouter{SourceAppID: "app1"}, StartEventIndex: 0, EventCount: 2, InstanceId: "wf-1", WorkflowName: "MyWf"},
 		},
 	}
 

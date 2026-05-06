@@ -31,13 +31,16 @@ func canForwardScope(receivedHistory *protos.PropagatedHistory) protos.HistoryPr
 // current workflow's runtime state, using the given propagation scope.
 // receivedHistory is the propagated history this workflow received from its
 // own parent — used when scope is LINEAGE.
-// appID is the current app's Dapr app ID, used to tag the chunk of events
-// produced by this workflow.
+// appID and namespace identify the producer of the chunk being added; they
+// are stamped on the chunk's TaskRouter so cross-namespace lineage can be
+// disambiguated downstream. namespace may be empty for single-namespace
+// deployments.
 func AssembleProtoPropagatedHistory(
 	state *protos.WorkflowRuntimeState,
 	scope protos.HistoryPropagationScope,
 	receivedHistory *protos.PropagatedHistory,
 	appID string,
+	namespace string,
 ) *protos.PropagatedHistory {
 	if scope == protos.HistoryPropagationScope_HISTORY_PROPAGATION_SCOPE_NONE {
 		return nil
@@ -70,7 +73,7 @@ func AssembleProtoPropagatedHistory(
 		}
 
 		chunks = append(chunks, &protos.PropagatedHistoryChunk{
-			AppId:           appID,
+			Router:          chunkRouter(appID, namespace),
 			StartEventIndex: int32(len(events)),
 			EventCount:      int32(len(ownEvents)),
 			InstanceId:      state.GetInstanceId(),
@@ -85,4 +88,16 @@ func AssembleProtoPropagatedHistory(
 		Scope:  scope,
 		Chunks: chunks,
 	}
+}
+
+// chunkRouter builds the source-only TaskRouter stamped on a propagated
+// chunk. target_* fields are left unset because chunks are not routed —
+// they record the identity of the producing workflow.
+func chunkRouter(appID, namespace string) *protos.TaskRouter {
+	r := &protos.TaskRouter{SourceAppID: appID}
+	if namespace != "" {
+		ns := namespace
+		r.SourceAppNamespace = &ns
+	}
+	return r
 }

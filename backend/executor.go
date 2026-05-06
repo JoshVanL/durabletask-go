@@ -454,7 +454,7 @@ func GetActivityExecutionKey(iid string, taskID int32) string {
 
 // GetInstance implements protos.TaskHubSidecarServiceServer
 func (g *grpcExecutor) GetInstance(ctx context.Context, req *protos.GetInstanceRequest) (*protos.GetInstanceResponse, error) {
-	metadata, err := g.backend.GetWorkflowMetadata(ctx, api.InstanceID(req.InstanceId))
+	metadata, err := g.backend.GetWorkflowMetadata(ctx, api.InstanceID(req.InstanceId), req.GetRouter())
 	if err != nil {
 		if errors.Is(err, api.ErrInstanceNotFound) {
 			return &protos.GetInstanceResponse{Exists: false}, nil

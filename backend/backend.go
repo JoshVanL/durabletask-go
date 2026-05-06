@@ -88,10 +88,13 @@ type Backend interface {
 	// Used over polling the metadata.
 	WatchWorkflowRuntimeStatus(ctx context.Context, id api.InstanceID, condition func(*WorkflowMetadata) bool) error
 
-	// GetWorkflowMetadata gets the metadata associated with the given workflow instance ID.
+	// GetWorkflowMetadata gets the metadata associated with the given workflow
+	// instance ID. When router carries a foreign TargetAppID and/or
+	// TargetAppNamespace, the backend may delegate the read to a remote
+	// app/namespace; pass nil for a local read.
 	//
 	// Returns [api.ErrInstanceNotFound] if the workflow instance doesn't exist.
-	GetWorkflowMetadata(context.Context, api.InstanceID) (*WorkflowMetadata, error)
+	GetWorkflowMetadata(ctx context.Context, id api.InstanceID, router *protos.TaskRouter) (*WorkflowMetadata, error)
 
 	// CompleteWorkflowWorkItem completes a work item by saving the updated runtime state to durable storage.
 	//

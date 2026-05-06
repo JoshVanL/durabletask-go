@@ -1088,20 +1088,10 @@ func (ctx *WorkflowContext) actions() []*protos.WorkflowAction {
 	return actions
 }
 
-// taskRouterFromTarget builds the routing envelope shared by activity and
-// child-workflow scheduling. Returns nil when the call is local (no target
-// app ID). Cross-namespace routing requires both target app ID and
-// namespace; the caller validates that invariant via
-// validateAppNamespaceRequiresAppID before reaching here.
+// taskRouterFromTarget delegates to api.TaskRouterFromTarget; kept as a
+// package-local alias to avoid touching every call site.
 func taskRouterFromTarget(targetAppID, targetAppNamespace *string) *protos.TaskRouter {
-	if targetAppID == nil {
-		return nil
-	}
-	r := &protos.TaskRouter{TargetAppID: ptr.Of(*targetAppID)}
-	if targetAppNamespace != nil {
-		r.TargetAppNamespace = ptr.Of(*targetAppNamespace)
-	}
-	return r
+	return api.TaskRouterFromTarget(targetAppID, targetAppNamespace)
 }
 
 // validateAppNamespaceRequiresAppID enforces the documented invariant that
@@ -1110,7 +1100,7 @@ func taskRouterFromTarget(targetAppID, targetAppNamespace *string) *protos.TaskR
 // nil. Activity and child-workflow scheduling share this check; the option
 // names differ between the two call sites which is why they are passed in.
 func validateAppNamespaceRequiresAppID(ctx *WorkflowContext, targetAppID, targetAppNamespace *string, errorType, nsOptName, appIDOptName string) Task {
-	if targetAppNamespace == nil || targetAppID != nil {
+	if api.ValidateAppNamespaceRequiresAppID(targetAppID, targetAppNamespace) == nil {
 		return nil
 	}
 	failedTask := newTask(ctx)

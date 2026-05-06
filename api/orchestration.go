@@ -51,6 +51,12 @@ type PurgeOptions func(*protos.PurgeInstancesRequest) error
 
 type RerunOptions func(*protos.RerunWorkflowFromEventRequest) error
 
+// SuspendOptions configures a suspend workflow request.
+type SuspendOptions func(*protos.SuspendRequest) error
+
+// ResumeOptions configures a resume workflow request.
+type ResumeOptions func(*protos.ResumeRequest) error
+
 type ListInstanceIDsOptions func(*protos.ListInstanceIDsRequest) error
 
 type GetInstanceHistoryOptions func(*protos.GetInstanceHistoryRequest) error
@@ -232,5 +238,200 @@ func WithListInstanceIDsContinuationToken(token string) ListInstanceIDsOptions {
 	return func(req *protos.ListInstanceIDsRequest) error {
 		req.ContinuationToken = &token
 		return nil
+	}
+}
+
+// withRouter merges the supplied appID / namespace into req's router
+// fragment, creating one if absent. Used by the WithAppID / WithAppNamespace
+// option helpers below to share a single mutation path.
+func withRouter[T any](getRouter func(T) *protos.TaskRouter, setRouter func(T, *protos.TaskRouter), req T, appID, namespace *string) {
+	r := getRouter(req)
+	if r == nil {
+		r = &protos.TaskRouter{}
+	}
+	if appID != nil {
+		r.TargetAppID = ptr.Of(*appID)
+	}
+	if namespace != nil {
+		r.TargetAppNamespace = ptr.Of(*namespace)
+	}
+	setRouter(req, r)
+}
+
+// Cross-app / cross-namespace routing helpers. Each operation has its own
+// pair of WithXxxAppID / WithXxxAppNamespace because Go's option typing is
+// per-operation. Pair WithXxxAppNamespace with the matching WithXxxAppID;
+// the namespace alone returns ErrAppNamespaceRequiresAppID.
+
+// Schedule (start) routing.
+func WithStartAppID(appID string) NewWorkflowOptions {
+	return func(req *protos.CreateInstanceRequest) error {
+		withRouter(
+			func(r *protos.CreateInstanceRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.CreateInstanceRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithStartAppNamespace(namespace string) NewWorkflowOptions {
+	return func(req *protos.CreateInstanceRequest) error {
+		withRouter(
+			func(r *protos.CreateInstanceRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.CreateInstanceRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+// Get / fetch metadata routing.
+func WithGetAppID(appID string) FetchWorkflowMetadataOptions {
+	return func(req *protos.GetInstanceRequest) {
+		withRouter(
+			func(r *protos.GetInstanceRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.GetInstanceRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+	}
+}
+
+func WithGetAppNamespace(namespace string) FetchWorkflowMetadataOptions {
+	return func(req *protos.GetInstanceRequest) {
+		withRouter(
+			func(r *protos.GetInstanceRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.GetInstanceRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+	}
+}
+
+// RaiseEvent routing.
+func WithRaiseEventAppID(appID string) RaiseEventOptions {
+	return func(req *protos.RaiseEventRequest) error {
+		withRouter(
+			func(r *protos.RaiseEventRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.RaiseEventRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithRaiseEventAppNamespace(namespace string) RaiseEventOptions {
+	return func(req *protos.RaiseEventRequest) error {
+		withRouter(
+			func(r *protos.RaiseEventRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.RaiseEventRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+// Terminate routing.
+func WithTerminateAppID(appID string) TerminateOptions {
+	return func(req *protos.TerminateRequest) error {
+		withRouter(
+			func(r *protos.TerminateRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.TerminateRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithTerminateAppNamespace(namespace string) TerminateOptions {
+	return func(req *protos.TerminateRequest) error {
+		withRouter(
+			func(r *protos.TerminateRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.TerminateRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+// Purge routing.
+func WithPurgeAppID(appID string) PurgeOptions {
+	return func(req *protos.PurgeInstancesRequest) error {
+		withRouter(
+			func(r *protos.PurgeInstancesRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.PurgeInstancesRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithPurgeAppNamespace(namespace string) PurgeOptions {
+	return func(req *protos.PurgeInstancesRequest) error {
+		withRouter(
+			func(r *protos.PurgeInstancesRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.PurgeInstancesRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+// Rerun routing.
+func WithRerunAppID(appID string) RerunOptions {
+	return func(req *protos.RerunWorkflowFromEventRequest) error {
+		withRouter(
+			func(r *protos.RerunWorkflowFromEventRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.RerunWorkflowFromEventRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithRerunAppNamespace(namespace string) RerunOptions {
+	return func(req *protos.RerunWorkflowFromEventRequest) error {
+		withRouter(
+			func(r *protos.RerunWorkflowFromEventRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.RerunWorkflowFromEventRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+func routerAppID(r *protos.TaskRouter) *string {
+	if r == nil {
+		return nil
+	}
+	return r.TargetAppID
+}
+
+// Suspend routing.
+func WithSuspendAppID(appID string) SuspendOptions {
+	return func(req *protos.SuspendRequest) error {
+		withRouter(
+			func(r *protos.SuspendRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.SuspendRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithSuspendAppNamespace(namespace string) SuspendOptions {
+	return func(req *protos.SuspendRequest) error {
+		withRouter(
+			func(r *protos.SuspendRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.SuspendRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
+	}
+}
+
+// Resume routing.
+func WithResumeAppID(appID string) ResumeOptions {
+	return func(req *protos.ResumeRequest) error {
+		withRouter(
+			func(r *protos.ResumeRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.ResumeRequest, v *protos.TaskRouter) { r.Router = v },
+			req, &appID, nil)
+		return nil
+	}
+}
+
+func WithResumeAppNamespace(namespace string) ResumeOptions {
+	return func(req *protos.ResumeRequest) error {
+		withRouter(
+			func(r *protos.ResumeRequest) *protos.TaskRouter { return r.GetRouter() },
+			func(r *protos.ResumeRequest, v *protos.TaskRouter) { r.Router = v },
+			req, nil, &namespace)
+		return ValidateAppNamespaceRequiresAppID(routerAppID(req.GetRouter()), &namespace)
 	}
 }

@@ -18,13 +18,13 @@ import (
 
 type TaskHubClient interface {
 	ScheduleNewWorkflow(ctx context.Context, workflow interface{}, opts ...api.NewWorkflowOptions) (api.InstanceID, error)
-	FetchWorkflowMetadata(ctx context.Context, id api.InstanceID) (*WorkflowMetadata, error)
+	FetchWorkflowMetadata(ctx context.Context, id api.InstanceID, opts ...api.FetchWorkflowMetadataOptions) (*WorkflowMetadata, error)
 	WaitForWorkflowStart(ctx context.Context, id api.InstanceID) (*WorkflowMetadata, error)
 	WaitForWorkflowCompletion(ctx context.Context, id api.InstanceID) (*WorkflowMetadata, error)
 	TerminateWorkflow(ctx context.Context, id api.InstanceID, opts ...api.TerminateOptions) error
 	RaiseEvent(ctx context.Context, id api.InstanceID, eventName string, opts ...api.RaiseEventOptions) error
-	SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string) error
-	ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string) error
+	SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.SuspendOptions) error
+	ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.ResumeOptions) error
 	PurgeWorkflowState(ctx context.Context, id api.InstanceID, opts ...api.PurgeOptions) error
 	RerunWorkflowFromEvent(ctx context.Context, source api.InstanceID, eventID uint32, opts ...api.RerunOptions) (api.InstanceID, error)
 }
@@ -75,6 +75,7 @@ func (c *backendClient) ScheduleNewWorkflow(ctx context.Context, workflow interf
 				ScheduledStartTimestamp: req.ScheduledStartTimestamp,
 			},
 		},
+		Router: req.GetRouter(),
 	}
 	if err := c.be.CreateWorkflowInstance(ctx, e); err != nil {
 		span.RecordError(err)
@@ -87,8 +88,12 @@ func (c *backendClient) ScheduleNewWorkflow(ctx context.Context, workflow interf
 // FetchWorkflowMetadata fetches metadata for the specified workflow from the configured task hub.
 //
 // ErrInstanceNotFound is returned when the specified workflow doesn't exist.
-func (c *backendClient) FetchWorkflowMetadata(ctx context.Context, id api.InstanceID) (*WorkflowMetadata, error) {
-	metadata, err := c.be.GetWorkflowMetadata(ctx, id)
+func (c *backendClient) FetchWorkflowMetadata(ctx context.Context, id api.InstanceID, opts ...api.FetchWorkflowMetadataOptions) (*WorkflowMetadata, error) {
+	req := &protos.GetInstanceRequest{InstanceId: string(id)}
+	for _, configure := range opts {
+		configure(req)
+	}
+	metadata, err := c.be.GetWorkflowMetadata(ctx, id, req.GetRouter())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch workflow metadata: %w", err)
 	}
@@ -142,6 +147,7 @@ func (c *backendClient) TerminateWorkflow(ctx context.Context, id api.InstanceID
 				Recurse: req.Recursive,
 			},
 		},
+		Router: req.GetRouter(),
 	}
 	if err := c.be.AddNewWorkflowEvent(ctx, id, e); err != nil {
 		return fmt.Errorf("failed to submit termination request:: %w", err)
@@ -171,6 +177,7 @@ func (c *backendClient) RaiseEvent(ctx context.Context, id api.InstanceID, event
 		EventType: &protos.HistoryEvent_EventRaised{
 			EventRaised: &protos.EventRaisedEvent{Name: req.Name, Input: req.Input},
 		},
+		Router: req.GetRouter(),
 	}
 	if err := c.be.AddNewWorkflowEvent(ctx, id, e); err != nil {
 		return fmt.Errorf("failed to raise event: %w", err)
@@ -181,19 +188,25 @@ func (c *backendClient) RaiseEvent(ctx context.Context, id api.InstanceID, event
 // SuspendWorkflow suspends a workflow instance, halting processing of its events until a "resume" operation resumes it.
 //
 // Note that suspended workflows are still considered to be "running" even though they will not process events.
-func (c *backendClient) SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string) error {
-	var input *wrapperspb.StringValue
+func (c *backendClient) SuspendWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.SuspendOptions) error {
+	req := &protos.SuspendRequest{InstanceId: string(id)}
 	if reason != "" {
-		input = wrapperspb.String(reason)
+		req.Reason = wrapperspb.String(reason)
+	}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return fmt.Errorf("failed to configure suspend request: %w", err)
+		}
 	}
 	e := &protos.HistoryEvent{
 		EventId:   -1,
 		Timestamp: timestamppb.New(time.Now()),
 		EventType: &protos.HistoryEvent_ExecutionSuspended{
 			ExecutionSuspended: &protos.ExecutionSuspendedEvent{
-				Input: input,
+				Input: req.Reason,
 			},
 		},
+		Router: req.GetRouter(),
 	}
 	if err := c.be.AddNewWorkflowEvent(ctx, id, e); err != nil {
 		return fmt.Errorf("failed to suspend workflow: %w", err)
@@ -202,19 +215,25 @@ func (c *backendClient) SuspendWorkflow(ctx context.Context, id api.InstanceID, 
 }
 
 // ResumeWorkflow resumes a workflow instance that was previously suspended.
-func (c *backendClient) ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string) error {
-	var input *wrapperspb.StringValue
+func (c *backendClient) ResumeWorkflow(ctx context.Context, id api.InstanceID, reason string, opts ...api.ResumeOptions) error {
+	req := &protos.ResumeRequest{InstanceId: string(id)}
 	if reason != "" {
-		input = wrapperspb.String(reason)
+		req.Reason = wrapperspb.String(reason)
+	}
+	for _, configure := range opts {
+		if err := configure(req); err != nil {
+			return fmt.Errorf("failed to configure resume request: %w", err)
+		}
 	}
 	e := &protos.HistoryEvent{
 		EventId:   -1,
 		Timestamp: timestamppb.New(time.Now()),
 		EventType: &protos.HistoryEvent_ExecutionResumed{
 			ExecutionResumed: &protos.ExecutionResumedEvent{
-				Input: input,
+				Input: req.Reason,
 			},
 		},
+		Router: req.GetRouter(),
 	}
 	if err := c.be.AddNewWorkflowEvent(ctx, id, e); err != nil {
 		return fmt.Errorf("failed to resume workflow: %w", err)

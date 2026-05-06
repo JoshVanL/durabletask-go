@@ -649,9 +649,9 @@ func (_c *Backend_GetInstanceHistory_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
-// GetWorkflowMetadata provides a mock function with given fields: _a0, _a1
-func (_m *Backend) GetWorkflowMetadata(_a0 context.Context, _a1 api.InstanceID) (*protos.WorkflowMetadata, error) {
-	ret := _m.Called(_a0, _a1)
+// GetWorkflowMetadata provides a mock function with given fields: _a0, _a1, _a2
+func (_m *Backend) GetWorkflowMetadata(_a0 context.Context, _a1 api.InstanceID, _a2 *protos.TaskRouter) (*protos.WorkflowMetadata, error) {
+	ret := _m.Called(_a0, _a1, _a2)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetWorkflowMetadata")
@@ -659,19 +659,19 @@ func (_m *Backend) GetWorkflowMetadata(_a0 context.Context, _a1 api.InstanceID) 
 
 	var r0 *protos.WorkflowMetadata
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, api.InstanceID) (*protos.WorkflowMetadata, error)); ok {
-		return rf(_a0, _a1)
+	if rf, ok := ret.Get(0).(func(context.Context, api.InstanceID, *protos.TaskRouter) (*protos.WorkflowMetadata, error)); ok {
+		return rf(_a0, _a1, _a2)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, api.InstanceID) *protos.WorkflowMetadata); ok {
-		r0 = rf(_a0, _a1)
+	if rf, ok := ret.Get(0).(func(context.Context, api.InstanceID, *protos.TaskRouter) *protos.WorkflowMetadata); ok {
+		r0 = rf(_a0, _a1, _a2)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*protos.WorkflowMetadata)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, api.InstanceID) error); ok {
-		r1 = rf(_a0, _a1)
+	if rf, ok := ret.Get(1).(func(context.Context, api.InstanceID, *protos.TaskRouter) error); ok {
+		r1 = rf(_a0, _a1, _a2)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -687,13 +687,14 @@ type Backend_GetWorkflowMetadata_Call struct {
 // GetWorkflowMetadata is a helper method to define mock.On call
 //   - _a0 context.Context
 //   - _a1 api.InstanceID
-func (_e *Backend_Expecter) GetWorkflowMetadata(_a0 interface{}, _a1 interface{}) *Backend_GetWorkflowMetadata_Call {
-	return &Backend_GetWorkflowMetadata_Call{Call: _e.mock.On("GetWorkflowMetadata", _a0, _a1)}
+//   - _a2 *protos.TaskRouter
+func (_e *Backend_Expecter) GetWorkflowMetadata(_a0 interface{}, _a1 interface{}, _a2 interface{}) *Backend_GetWorkflowMetadata_Call {
+	return &Backend_GetWorkflowMetadata_Call{Call: _e.mock.On("GetWorkflowMetadata", _a0, _a1, _a2)}
 }
 
-func (_c *Backend_GetWorkflowMetadata_Call) Run(run func(_a0 context.Context, _a1 api.InstanceID)) *Backend_GetWorkflowMetadata_Call {
+func (_c *Backend_GetWorkflowMetadata_Call) Run(run func(_a0 context.Context, _a1 api.InstanceID, _a2 *protos.TaskRouter)) *Backend_GetWorkflowMetadata_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(api.InstanceID))
+		run(args[0].(context.Context), args[1].(api.InstanceID), args[2].(*protos.TaskRouter))
 	})
 	return _c
 }
@@ -703,7 +704,7 @@ func (_c *Backend_GetWorkflowMetadata_Call) Return(_a0 *protos.WorkflowMetadata,
 	return _c
 }
 
-func (_c *Backend_GetWorkflowMetadata_Call) RunAndReturn(run func(context.Context, api.InstanceID) (*protos.WorkflowMetadata, error)) *Backend_GetWorkflowMetadata_Call {
+func (_c *Backend_GetWorkflowMetadata_Call) RunAndReturn(run func(context.Context, api.InstanceID, *protos.TaskRouter) (*protos.WorkflowMetadata, error)) *Backend_GetWorkflowMetadata_Call {
 	_c.Call.Return(run)
 	return _c
 }

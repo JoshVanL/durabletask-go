@@ -60,9 +60,10 @@ func NewHistoryPropagationScope(opt PropagationOption) protos.HistoryPropagation
 }
 
 // historyChunk represents a contiguous range of events produced by a single
-// workflow instance
+// workflow instance.
 type historyChunk struct {
 	appID           string
+	namespace       string
 	startEventIndex int
 	eventCount      int
 	instanceID      string
@@ -161,6 +162,7 @@ type WorkflowResult struct {
 	Found      bool
 	InstanceID string
 	AppID      string
+	Namespace  string // empty for single-namespace deployments
 	Name       string // wf name
 	events     []*protos.HistoryEvent
 }
@@ -192,6 +194,7 @@ func (ph *PropagatedHistory) makeWorkflowResult(chunk historyChunk) *WorkflowRes
 		Found:      true,
 		InstanceID: chunk.instanceID,
 		AppID:      chunk.appID,
+		Namespace:  chunk.namespace,
 		Name:       chunk.workflowName,
 		events:     ph.chunkEvents(chunk),
 	}
@@ -351,8 +354,10 @@ func (wr WorkflowResult) GetChildWorkflowsByName(name string) []*ChildWorkflowRe
 
         chunks := make([]historyChunk, len(ph.GetChunks()))
         for i, c := range ph.GetChunks() {
+                router := c.GetRouter()
                 chunks[i] = historyChunk{
-                        appID:           c.GetAppId(),
+                        appID:           router.GetSourceAppID(),
+                        namespace:       router.GetSourceAppNamespace(),
                         startEventIndex: int(c.GetStartEventIndex()),
                         eventCount:      int(c.GetEventCount()),
                         instanceID:      c.GetInstanceId(),
