@@ -465,7 +465,7 @@ func (g *grpcExecutor) Shutdown(ctx context.Context) error {
 }
 
 // Hello implements protos.TaskHubSidecarServiceServer
-func (grpcExecutor) Hello(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
+func (*grpcExecutor) Hello(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
 	return empty, nil
 }
 
@@ -529,6 +529,10 @@ func (g *grpcExecutor) GetWorkItems(req *protos.GetWorkItemsRequest, stream prot
 				err := g.backend.CancelWorkflowTask(context.Background(), p.instanceID)
 				if err != nil {
 					g.logger.Warnf("failed to cancel workflow task: %v", err)
+					// Keep the entry: the backend completion waiter is still
+					// live, and a later cleanup (executor shutdown) must be
+					// able to retry the cancellation.
+					return true
 				}
 				// Only this stream's entry: a newer attempt from a fresh
 				// stream may have re-stored the key since the Range yielded.
