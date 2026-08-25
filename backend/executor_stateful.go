@@ -147,30 +147,48 @@ func (g *grpcExecutor) drainStreamBuffer(ss *streamState) {
 	}
 }
 
-// requeueWorkItem puts an undelivered work item back on the shared queue. The
-// item was never sent to any worker, so redelivery is safe. When the executor
-// is shutting down (the shared queue is closed or closing) or the queue has no
-// capacity, fall back to aborting the turn so the backend's retry path
-// re-derives it instead of it being lost.
+// requeueWorkItem settles an undelivered work item pulled from a closed
+// stream's buffer: back onto the shared queue when it has capacity (the item
+// was never sent to any worker, so redelivery is safe), otherwise by
+// cancelling the task so the backend's retry path re-derives it. The item
+// carries a live completion waiter, so this must not give up: a transient
+// cancel error is retried with capped backoff, alternating with the requeue
+// attempt, until one of them succeeds. Blocking this teardown goroutine on a
+// persistently failing backend is deliberate and loudly logged; dropping the
+// item would strand the waiter until executor shutdown.
 func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
-	g.queueLock.RLock()
-	requeued := false
-	if !g.queueClosed {
-		select {
-		case g.workItemQueue <- wi:
-			requeued = true
-		default:
+	backoff := 10 * time.Millisecond
+	for {
+		g.queueLock.RLock()
+		requeued := false
+		if !g.queueClosed {
+			select {
+			case g.workItemQueue <- wi:
+				requeued = true
+			default:
+			}
 		}
-	}
-	g.queueLock.RUnlock()
-	if requeued {
-		return
-	}
-	if x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest); ok {
+		g.queueLock.RUnlock()
+		if requeued {
+			return
+		}
+
+		x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest)
+		if !ok {
+			// Only workflow items are affinity-routed, so only they can be
+			// drained here.
+			return
+		}
 		iid := api.InstanceID(x.WorkflowRequest.GetInstanceId())
-		g.logger.Warnf("cannot requeue work item while draining a closed stream; cancelling workflow task for %s so it is redelivered", iid)
-		if err := g.backend.CancelWorkflowTask(context.Background(), iid); err != nil {
-			g.logger.Warnf("failed to cancel workflow task while draining closed stream: %v", err)
+		err := g.backend.CancelWorkflowTask(context.Background(), iid)
+		if err == nil {
+			g.logger.Warnf("cannot requeue work item while draining a closed stream; cancelled workflow task for %s so it is redelivered", iid)
+			return
+		}
+		g.logger.Warnf("failed to cancel workflow task for %s while draining a closed stream; retrying in %s: %v", iid, backoff, err)
+		time.Sleep(backoff)
+		if backoff < time.Second {
+			backoff *= 2
 		}
 	}
 }

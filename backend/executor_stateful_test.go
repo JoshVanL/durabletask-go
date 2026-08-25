@@ -15,6 +15,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"sync"
 	"testing"
@@ -381,4 +382,45 @@ func TestTrySend_ClosedStreamRefuses(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Empty(t, ss.ch, "nothing may land in the buffer after the drain")
+}
+
+type flakyCancelBackend struct {
+	Backend
+	mu        sync.Mutex
+	failures  int
+	cancelled []api.InstanceID
+}
+
+func (f *flakyCancelBackend) CancelWorkflowTask(_ context.Context, iid api.InstanceID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failures > 0 {
+		f.failures--
+		return errors.New("transient backend error")
+	}
+	f.cancelled = append(f.cancelled, iid)
+	return nil
+}
+
+// A transient cancel error during the drain fallback must not discard the
+// item: the completion waiter is live, so the drain retries until the item
+// is settled one way or the other.
+func TestRequeueWorkItem_RetriesTransientCancelFailure(t *testing.T) {
+	fb := &flakyCancelBackend{failures: 3}
+	g := &grpcExecutor{
+		workItemQueue: make(chan *protos.WorkItem),
+		streams:       &sync.Map{},
+		backend:       fb,
+		logger:        DefaultLogger(),
+	}
+	ss := capableStream("dying")
+	ss.ch <- wfWorkItem("wf-flaky")
+
+	g.drainStreamBuffer(ss)
+
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	require.Len(t, fb.cancelled, 1, "the item must be settled once the transient error clears")
+	assert.Equal(t, api.InstanceID("wf-flaky"), fb.cancelled[0])
+	assert.Zero(t, fb.failures)
 }
