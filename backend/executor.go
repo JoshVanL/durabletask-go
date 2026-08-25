@@ -36,6 +36,10 @@ const streamOutboxSize = 64
 type pendingWorkflow struct {
 	instanceID api.InstanceID
 	streamID   string
+	// completionToken is the tracked dispatch's WorkItem.CompletionToken; a
+	// drained buffered item is only requeued or cancelled when its token
+	// still matches, so a stale attempt cannot disturb a newer registration.
+	completionToken string
 }
 
 type pendingActivity struct {
@@ -217,7 +221,8 @@ func (g *grpcExecutor) executeWorkflowAsync(ctx context.Context, iid api.Instanc
 	// Capture the tracked value: a superseded attempt settling late must not
 	// delete a newer attempt's entry (both share the instance key), or the
 	// newer dispatch loses stream-disconnect/shutdown cancellation.
-	trackedWorkflow := &pendingWorkflow{instanceID: iid}
+	dispatchToken := uuid.NewString()
+	trackedWorkflow := &pendingWorkflow{instanceID: iid, completionToken: dispatchToken}
 	g.pendingWorkflows.Store(iid, trackedWorkflow)
 
 	req := &protos.WorkflowRequest{
@@ -234,7 +239,7 @@ func (g *grpcExecutor) executeWorkflowAsync(ctx context.Context, iid api.Instanc
 	// history and strand the instance (the chaos-campaign janitor-livelock
 	// class). Workers that do not echo tokens send an empty one and keep
 	// today's behavior.
-	token := uuid.NewString()
+	token := dispatchToken
 	workItem := &protos.WorkItem{
 		Request: &protos.WorkItem_WorkflowRequest{
 			WorkflowRequest: req,

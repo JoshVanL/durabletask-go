@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
 	"sync"
 	"sync/atomic"
@@ -150,15 +151,31 @@ func (g *grpcExecutor) drainStreamBuffer(ss *streamState) {
 // requeueWorkItem settles an undelivered work item pulled from a closed
 // stream's buffer: back onto the shared queue when it has capacity (the item
 // was never sent to any worker, so redelivery is safe), otherwise by
-// cancelling the task so the backend's retry path re-derives it. The item
-// carries a live completion waiter, so this must not give up: a transient
-// cancel error is retried with capped backoff, alternating with the requeue
-// attempt, until one of them succeeds. Blocking this teardown goroutine on a
-// persistently failing backend is deliberate and loudly logged; dropping the
-// item would strand the waiter until executor shutdown.
+// cancelling the task so the backend's retry path re-derives it. Both are
+// gated on the item still being the instance's tracked dispatch (completion
+// token match): a superseded or already-settled attempt is dropped so it
+// cannot disturb a newer registration. A live matching item must not be
+// given up on: a transient cancel error is retried with capped backoff,
+// alternating with the requeue attempt, until it is settled; an unknown
+// registration means it settled concurrently.
 func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
+	x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest)
+	if !ok {
+		// Only workflow items are affinity-routed, so only they can be
+		// drained here.
+		return
+	}
+	iid := api.InstanceID(x.WorkflowRequest.GetInstanceId())
+
 	backoff := 10 * time.Millisecond
 	for {
+		value, tracked := g.pendingWorkflows.Load(iid)
+		p, pok := value.(*pendingWorkflow)
+		if !tracked || !pok || p.completionToken != wi.GetCompletionToken() {
+			g.logger.Debugf("dropping drained work item for %s: its dispatch was superseded or already settled", iid)
+			return
+		}
+
 		g.queueLock.RLock()
 		requeued := false
 		if !g.queueClosed {
@@ -173,16 +190,13 @@ func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
 			return
 		}
 
-		x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest)
-		if !ok {
-			// Only workflow items are affinity-routed, so only they can be
-			// drained here.
-			return
-		}
-		iid := api.InstanceID(x.WorkflowRequest.GetInstanceId())
 		err := g.backend.CancelWorkflowTask(context.Background(), iid)
 		if err == nil {
 			g.logger.Warnf("cannot requeue work item while draining a closed stream; cancelled workflow task for %s so it is redelivered", iid)
+			return
+		}
+		if api.IsUnknownInstanceIDError(err) || errors.Is(err, api.ErrInstanceNotFound) {
+			// The registration is gone: the attempt settled concurrently.
 			return
 		}
 		g.logger.Warnf("failed to cancel workflow task for %s while draining a closed stream; retrying in %s: %v", iid, backoff, err)

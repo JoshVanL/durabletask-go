@@ -472,8 +472,10 @@ func TestGetWorkItems_DisconnectRedeliversBufferedItem(t *testing.T) {
 			return true
 		}
 		i++
+		iid := fmt.Sprintf("parked-%d", i)
+		g.pendingWorkflows.Store(api.InstanceID(iid), &pendingWorkflow{instanceID: api.InstanceID(iid)})
 		ok := ss.trySend(&protos.WorkItem{Request: &protos.WorkItem_WorkflowRequest{
-			WorkflowRequest: &protos.WorkflowRequest{InstanceId: fmt.Sprintf("parked-%d", i)},
+			WorkflowRequest: &protos.WorkflowRequest{InstanceId: iid},
 		}})
 		_ = ok
 		return false
