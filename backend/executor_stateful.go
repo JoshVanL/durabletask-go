@@ -190,6 +190,11 @@ func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
 			return
 		}
 
+		if value, ok := g.pendingWorkflows.Load(iid); !ok || value != any(p) {
+			g.logger.Debugf("dropping drained work item for %s: its dispatch settled during the drain", iid)
+			return
+		}
+
 		err := g.backend.CancelWorkflowTask(context.Background(), iid)
 		if err == nil {
 			g.logger.Warnf("cannot requeue work item while draining a closed stream; cancelled workflow task for %s so it is redelivered", iid)

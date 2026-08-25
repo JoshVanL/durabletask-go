@@ -531,6 +531,11 @@ func (g *grpcExecutor) GetWorkItems(req *protos.GetWorkItemsRequest, stream prot
 		g.pendingWorkflows.Range(func(key, value any) bool {
 			if p, ok := value.(*pendingWorkflow); ok && p.streamID == streamID {
 				g.logger.Debugf("cleaning up pending workflow: %s", key)
+				// Cancellation is keyed by instance (the Backend interface
+				// carries no attempt identity); upstream per-instance
+				// serialization bounds the replacement race, and a spurious
+				// cancel of a fresh attempt aborts into its recoverable
+				// retry.
 				err := g.backend.CancelWorkflowTask(context.Background(), p.instanceID)
 				if err != nil {
 					g.logger.Warnf("failed to cancel workflow task: %v", err)
