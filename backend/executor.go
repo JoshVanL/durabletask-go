@@ -471,6 +471,14 @@ func (g *grpcExecutor) GetWorkItems(req *protos.GetWorkItemsRequest, stream prot
 	// so the next turn for those instances falls back to a full history send.
 	ss := newStreamState(streamID, req)
 	g.streams.Store(streamID, ss)
+	// Registered before the registry delete so it runs after it (defers run
+	// LIFO): by drain time the stream is unroutable, so the buffer can only
+	// shrink. Without the drain, items routed into the affinity buffer but
+	// never pulled by the dispatch loop would die with the stream: they carry
+	// no streamID yet, so the pending cleanup below cannot cancel them, and
+	// the instance stalls with a registered completion waiter that nothing
+	// ever settles.
+	defer g.drainStreamBuffer(ss)
 	defer g.streams.Delete(streamID)
 
 	// There are some cases where the app may need to be notified when a client connects to fetch work items, like
@@ -487,6 +495,11 @@ func (g *grpcExecutor) GetWorkItems(req *protos.GetWorkItemsRequest, stream prot
 	}
 
 	defer func() {
+		// Stop producers routing new work into this stream's affinity buffer:
+		// affinityStreamOwner skips closed streams and in-flight producers
+		// re-check the flag after their grace window.
+		ss.closed.Store(true)
+
 		// If there's any pending activity left, remove them
 		g.pendingActivities.Range(func(key, value any) bool {
 			if p, ok := value.(*pendingActivity); ok && p.streamID == streamID {
@@ -508,6 +521,9 @@ func (g *grpcExecutor) GetWorkItems(req *protos.GetWorkItemsRequest, stream prot
 				if err != nil {
 					g.logger.Warnf("failed to cancel workflow task: %v", err)
 				}
+				// Only this stream's entry: a newer attempt from a fresh
+				// stream may have re-stored the key since the Range yielded.
+				g.pendingWorkflows.CompareAndDelete(key, value)
 			}
 			return true
 		})

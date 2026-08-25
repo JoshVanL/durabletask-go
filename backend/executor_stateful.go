@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"hash/fnv"
+	"sync/atomic"
 	"time"
 
 	"github.com/dapr/durabletask-go/api"
@@ -47,6 +48,12 @@ type streamState struct {
 
 	// maxWarm is the soft cap on warm entries; defaults to maxWarmInstancesPerStream.
 	maxWarm int
+
+	// closed is set when the stream begins tearing down. Producers must not
+	// route new items into ch once set: the buffer is about to be drained and
+	// re-offered to the shared queue, and anything routed in afterwards would
+	// be orphaned with the dead stream.
+	closed atomic.Bool
 }
 
 func newStreamState(id string, req *protos.GetWorkItemsRequest) *streamState {
@@ -102,13 +109,18 @@ func (g *grpcExecutor) dispatchWorkflowWorkItem(ctx context.Context, iid api.Ins
 			return nil
 		case <-t.C:
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case owner.ch <- wi:
-			return nil
-		case g.workItemQueue <- wi:
-			return nil
+		// The owner may have begun tearing down during the grace; its buffer
+		// is about to be drained, so stop offering to it and take the shared
+		// queue only.
+		if !owner.closed.Load() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case owner.ch <- wi:
+				return nil
+			case g.workItemQueue <- wi:
+				return nil
+			}
 		}
 	}
 
@@ -117,6 +129,46 @@ func (g *grpcExecutor) dispatchWorkflowWorkItem(ctx context.Context, iid api.Ins
 		return ctx.Err()
 	case g.workItemQueue <- wi:
 		return nil
+	}
+}
+
+// drainStreamBuffer re-offers work items still sitting in a closed stream's
+// affinity buffer to the shared queue so a surviving stream delivers them.
+// It runs after the stream is removed from the registry, but a producer that
+// chose this owner just before removal can still be inside its grace window,
+// so it drains a second time after a gap wider than the grace to catch
+// stragglers.
+func (g *grpcExecutor) drainStreamBuffer(ss *streamState) {
+	for range 2 {
+		for {
+			select {
+			case wi := <-ss.ch:
+				g.requeueWorkItem(wi)
+			default:
+				goto wait
+			}
+		}
+	wait:
+		time.Sleep(affinityOwnerGrace * 2)
+	}
+}
+
+// requeueWorkItem puts an undelivered work item back on the shared queue.
+// The item was never sent to any worker, so redelivery is safe. If the queue
+// has no capacity, fall back to aborting the turn so the backend's retry
+// path re-derives it instead of it being lost.
+func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
+	select {
+	case g.workItemQueue <- wi:
+		return
+	default:
+	}
+	if x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest); ok {
+		iid := api.InstanceID(x.WorkflowRequest.GetInstanceId())
+		g.logger.Warnf("shared queue full while draining a closed stream; cancelling workflow task for %s so it is redelivered", iid)
+		if err := g.backend.CancelWorkflowTask(context.Background(), iid); err != nil {
+			g.logger.Warnf("failed to cancel workflow task while draining closed stream: %v", err)
+		}
 	}
 }
 
@@ -130,7 +182,7 @@ func (g *grpcExecutor) affinityStreamOwner(iid api.InstanceID) *streamState {
 	var bestScore uint64
 	g.streams.Range(func(_, value any) bool {
 		ss, ok := value.(*streamState)
-		if !ok || !ss.statefulHistory {
+		if !ok || !ss.statefulHistory || ss.closed.Load() {
 			return true
 		}
 		score := rendezvousScore(iid, ss.id)

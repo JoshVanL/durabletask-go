@@ -14,6 +14,7 @@ limitations under the License.
 package backend
 
 import (
+	"context"
 	"strconv"
 	"sync"
 	"testing"
@@ -233,4 +234,109 @@ func TestAffinityStreamOwner_MinimalRemapOnMembershipChange(t *testing.T) {
 			assert.Equal(t, prev, got, "instance %s must not remap when its owner stayed connected", iid)
 		}
 	}
+}
+
+func TestAffinityStreamOwner_SkipsClosedStreams(t *testing.T) {
+	closing := capableStream("closing")
+	survivor := capableStream("survivor")
+	g := streamsWith(closing, survivor)
+
+	closing.closed.Store(true)
+	for i := 0; i < 50; i++ {
+		owner := g.affinityStreamOwner(api.InstanceID("inst-" + strconv.Itoa(i)))
+		require.NotNil(t, owner)
+		assert.Equal(t, "survivor", owner.id,
+			"a stream that has begun tearing down must not be chosen as owner")
+	}
+}
+
+func wfWorkItem(iid string) *protos.WorkItem {
+	return &protos.WorkItem{Request: &protos.WorkItem_WorkflowRequest{
+		WorkflowRequest: workflowReq(iid, 0, 1),
+	}}
+}
+
+// A dying stream's affinity buffer must be re-offered to the shared queue so
+// a surviving worker delivers the items, instead of orphaning them with the
+// stream (which stalled the instance until an external recovery kicked in).
+func TestDrainStreamBuffer_RequeuesToSharedQueue(t *testing.T) {
+	g := &grpcExecutor{
+		workItemQueue: make(chan *protos.WorkItem, 8),
+		streams:       &sync.Map{},
+		logger:        DefaultLogger(),
+	}
+	ss := capableStream("dying")
+	ss.closed.Store(true)
+	ss.ch <- wfWorkItem("wf-a")
+	ss.ch <- wfWorkItem("wf-b")
+
+	g.drainStreamBuffer(ss)
+
+	require.Len(t, g.workItemQueue, 2)
+	got := map[string]struct{}{}
+	for i := 0; i < 2; i++ {
+		wi := <-g.workItemQueue
+		got[wi.GetWorkflowRequest().GetInstanceId()] = struct{}{}
+	}
+	assert.Contains(t, got, "wf-a")
+	assert.Contains(t, got, "wf-b")
+	assert.Empty(t, ss.ch, "the dying stream's buffer must be fully drained")
+}
+
+type fakeCancelBackend struct {
+	Backend
+	mu        sync.Mutex
+	cancelled []api.InstanceID
+}
+
+func (f *fakeCancelBackend) CancelWorkflowTask(_ context.Context, iid api.InstanceID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cancelled = append(f.cancelled, iid)
+	return nil
+}
+
+// When the shared queue has no capacity to absorb a drained item, the turn is
+// aborted so the backend's retry path re-derives it: degraded, but never lost.
+func TestDrainStreamBuffer_CancelsWhenQueueFull(t *testing.T) {
+	fb := &fakeCancelBackend{}
+	g := &grpcExecutor{
+		workItemQueue: make(chan *protos.WorkItem),
+		streams:       &sync.Map{},
+		backend:       fb,
+		logger:        DefaultLogger(),
+	}
+	ss := capableStream("dying")
+	ss.closed.Store(true)
+	ss.ch <- wfWorkItem("wf-orphan")
+
+	g.drainStreamBuffer(ss)
+
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	require.Len(t, fb.cancelled, 1)
+	assert.Equal(t, api.InstanceID("wf-orphan"), fb.cancelled[0])
+}
+
+// A producer must not route into a closed owner's buffer: with the owner
+// closed the item takes the shared queue, where any surviving stream can
+// deliver it.
+func TestDispatchWorkflowWorkItem_ClosedOwnerFallsToSharedQueue(t *testing.T) {
+	owner := capableStream("owner")
+	g := streamsWith(owner)
+	g.workItemQueue = make(chan *protos.WorkItem, 1)
+	g.logger = DefaultLogger()
+
+	// Fill the owner's buffer so the fast path cannot accept, then close it:
+	// the post-grace re-check must divert to the shared queue rather than
+	// blocking on the dead owner.
+	for i := 0; i < cap(owner.ch); i++ {
+		owner.ch <- wfWorkItem("filler")
+	}
+	owner.closed.Store(true)
+
+	wi := wfWorkItem("wf-live")
+	require.NoError(t, g.dispatchWorkflowWorkItem(context.Background(), "wf-live", wi))
+	require.Len(t, g.workItemQueue, 1)
+	assert.Equal(t, "wf-live", (<-g.workItemQueue).GetWorkflowRequest().GetInstanceId())
 }
