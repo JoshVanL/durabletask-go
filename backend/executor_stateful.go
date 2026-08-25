@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"hash/fnv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,10 +50,18 @@ type streamState struct {
 	// maxWarm is the soft cap on warm entries; defaults to maxWarmInstancesPerStream.
 	maxWarm int
 
-	// closed is set when the stream begins tearing down. Producers must not
-	// route new items into ch once set: the buffer is about to be drained and
-	// re-offered to the shared queue, and anything routed in afterwards would
-	// be orphaned with the dead stream.
+	// sendMu serializes producer sends into ch against teardown: producers
+	// hold it shared around the closed check and the send, teardown takes it
+	// exclusively to flip closed before draining. That guarantees no producer
+	// is between its closed check and its send when the buffer is drained, so
+	// nothing can land in the buffer afterwards.
+	sendMu sync.RWMutex
+
+	// closed is set (under sendMu) when the stream begins tearing down.
+	// Producers must not route new items into ch once set: the buffer is
+	// drained and re-offered to the shared queue, and anything routed in
+	// afterwards would be orphaned with the dead stream. Read lock-free by
+	// affinityStreamOwner as a cheap skim; trySend re-checks under sendMu.
 	closed atomic.Bool
 }
 
@@ -90,37 +99,23 @@ func (g *grpcExecutor) dispatchWorkflowWorkItem(ctx context.Context, iid api.Ins
 	owner := g.affinityStreamOwner(iid)
 	if owner != nil {
 		// Fast path: the owner is parked and ready, hand it over directly.
-		select {
-		case owner.ch <- wi:
+		if owner.trySend(wi) {
 			return nil
-		default:
 		}
-		// Owner busy: give it a short grace to drain before racing the shared
-		// queue, so a momentarily busy owner keeps the delta send. After the
-		// grace any free stream may take over, preserving the guarantee that
-		// the producer never blocks solely on the owner.
-		t := time.NewTimer(affinityOwnerGrace)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return ctx.Err()
-		case owner.ch <- wi:
-			t.Stop()
+		// Owner busy: give it a short grace to drain before falling to the
+		// shared queue, so a momentarily busy owner keeps the delta send.
+		// After the grace any free stream may take over, preserving the
+		// guarantee that the producer never blocks solely on the owner. Both
+		// sends hold the stream's send lock shared, so they serialize with
+		// teardown: an item either lands before the teardown drain (and is
+		// re-offered to the shared queue) or the closed check diverts it
+		// here; it can never land in the buffer after the drain.
+		ok, err := owner.trySendGrace(ctx, wi, affinityOwnerGrace)
+		if err != nil {
+			return err
+		}
+		if ok {
 			return nil
-		case <-t.C:
-		}
-		// The owner may have begun tearing down during the grace; its buffer
-		// is about to be drained, so stop offering to it and take the shared
-		// queue only.
-		if !owner.closed.Load() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case owner.ch <- wi:
-				return nil
-			case g.workItemQueue <- wi:
-				return nil
-			}
 		}
 	}
 
@@ -132,40 +127,48 @@ func (g *grpcExecutor) dispatchWorkflowWorkItem(ctx context.Context, iid api.Ins
 	}
 }
 
-// drainStreamBuffer re-offers work items still sitting in a closed stream's
-// affinity buffer to the shared queue so a surviving stream delivers them.
-// It runs after the stream is removed from the registry, but a producer that
-// chose this owner just before removal can still be inside its grace window,
-// so it drains a second time after a gap wider than the grace to catch
-// stragglers.
+// drainStreamBuffer marks the stream closed and re-offers work items still
+// sitting in its affinity buffer to the shared queue so a surviving stream
+// delivers them. Taking sendMu exclusively before flipping closed waits out
+// any producer already between its closed check and its send, so once the
+// drain starts nothing can land in the buffer: a single drain is complete.
 func (g *grpcExecutor) drainStreamBuffer(ss *streamState) {
-	for range 2 {
-		for {
-			select {
-			case wi := <-ss.ch:
-				g.requeueWorkItem(wi)
-			default:
-				goto wait
-			}
+	ss.sendMu.Lock()
+	ss.closed.Store(true)
+	ss.sendMu.Unlock()
+
+	for {
+		select {
+		case wi := <-ss.ch:
+			g.requeueWorkItem(wi)
+		default:
+			return
 		}
-	wait:
-		time.Sleep(affinityOwnerGrace * 2)
 	}
 }
 
-// requeueWorkItem puts an undelivered work item back on the shared queue.
-// The item was never sent to any worker, so redelivery is safe. If the queue
-// has no capacity, fall back to aborting the turn so the backend's retry
-// path re-derives it instead of it being lost.
+// requeueWorkItem puts an undelivered work item back on the shared queue. The
+// item was never sent to any worker, so redelivery is safe. When the executor
+// is shutting down (the shared queue is closed or closing) or the queue has no
+// capacity, fall back to aborting the turn so the backend's retry path
+// re-derives it instead of it being lost.
 func (g *grpcExecutor) requeueWorkItem(wi *protos.WorkItem) {
-	select {
-	case g.workItemQueue <- wi:
+	g.queueLock.RLock()
+	requeued := false
+	if !g.queueClosed {
+		select {
+		case g.workItemQueue <- wi:
+			requeued = true
+		default:
+		}
+	}
+	g.queueLock.RUnlock()
+	if requeued {
 		return
-	default:
 	}
 	if x, ok := wi.GetRequest().(*protos.WorkItem_WorkflowRequest); ok {
 		iid := api.InstanceID(x.WorkflowRequest.GetInstanceId())
-		g.logger.Warnf("shared queue full while draining a closed stream; cancelling workflow task for %s so it is redelivered", iid)
+		g.logger.Warnf("cannot requeue work item while draining a closed stream; cancelling workflow task for %s so it is redelivered", iid)
 		if err := g.backend.CancelWorkflowTask(context.Background(), iid); err != nil {
 			g.logger.Warnf("failed to cancel workflow task while draining closed stream: %v", err)
 		}
@@ -251,5 +254,42 @@ func (s *streamState) applyStatefulHistory(req *protos.WorkflowRequest) {
 				break
 			}
 		}
+	}
+}
+
+// trySend offers wi to this stream's affinity buffer without blocking.
+// Returns false when the buffer is full or the stream is tearing down.
+func (s *streamState) trySend(wi *protos.WorkItem) bool {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	if s.closed.Load() {
+		return false
+	}
+	select {
+	case s.ch <- wi:
+		return true
+	default:
+		return false
+	}
+}
+
+// trySendGrace offers wi to this stream's affinity buffer, waiting up to
+// grace for buffer space. Returns false when the grace expires or the stream
+// is tearing down, and an error only when ctx is done.
+func (s *streamState) trySendGrace(ctx context.Context, wi *protos.WorkItem, grace time.Duration) (bool, error) {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	if s.closed.Load() {
+		return false, nil
+	}
+	t := time.NewTimer(grace)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case s.ch <- wi:
+		return true, nil
+	case <-t.C:
+		return false, nil
 	}
 }

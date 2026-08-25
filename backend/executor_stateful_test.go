@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -339,4 +340,45 @@ func TestDispatchWorkflowWorkItem_ClosedOwnerFallsToSharedQueue(t *testing.T) {
 	require.NoError(t, g.dispatchWorkflowWorkItem(context.Background(), "wf-live", wi))
 	require.Len(t, g.workItemQueue, 1)
 	assert.Equal(t, "wf-live", (<-g.workItemQueue).GetWorkflowRequest().GetInstanceId())
+}
+
+// After Shutdown closed the shared queue, a stream teardown drain must not
+// panic on the send; it cancels the task so the backend's retry redelivers.
+func TestDrainStreamBuffer_ShutdownCancelsInsteadOfPanicking(t *testing.T) {
+	fb := &fakeCancelBackend{}
+	g := &grpcExecutor{
+		workItemQueue: make(chan *protos.WorkItem, 8),
+		streams:       &sync.Map{},
+		backend:       fb,
+		logger:        DefaultLogger(),
+	}
+	g.queueLock.Lock()
+	g.queueClosed = true
+	close(g.workItemQueue)
+	g.queueLock.Unlock()
+
+	ss := capableStream("dying")
+	ss.ch <- wfWorkItem("wf-shutdown")
+
+	require.NotPanics(t, func() { g.drainStreamBuffer(ss) })
+
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	require.Len(t, fb.cancelled, 1)
+	assert.Equal(t, api.InstanceID("wf-shutdown"), fb.cancelled[0])
+}
+
+// A producer that selected an owner just before teardown must serialize with
+// the drain: its item either lands before the drain (re-offered) or diverts
+// to the shared queue, never into the dead buffer afterwards.
+func TestTrySend_ClosedStreamRefuses(t *testing.T) {
+	ss := capableStream("s")
+	require.True(t, ss.trySend(wfWorkItem("a")))
+	g := &grpcExecutor{workItemQueue: make(chan *protos.WorkItem, 8), streams: &sync.Map{}, logger: DefaultLogger()}
+	g.drainStreamBuffer(ss)
+	assert.False(t, ss.trySend(wfWorkItem("b")), "a drained stream must refuse new sends")
+	ok, err := ss.trySendGrace(context.Background(), wfWorkItem("c"), time.Millisecond)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Empty(t, ss.ch, "nothing may land in the buffer after the drain")
 }
